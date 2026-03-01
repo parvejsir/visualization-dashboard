@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Transcriptions Dashboard</title>
+    <link rel="stylesheet" href="/public/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Transcriptions Dashboard</h1>
+
+      <div class="card">
+        <div class="grid">
+          <div>
+            <label>From (createdAt)</label>
+            <input id="from" type="datetime-local" />
+          </div>
+
+          <div>
+            <label>To (createdAt)</label>
+            <input id="to" type="datetime-local" />
+          </div>
+
+          <div>
+            <label>Duration bucket</label>
+            <select id="durationBucket">
+              <option value="">(ignore)</option>
+              <option value="gte10">&ge; 10 seconds</option>
+              <option value="gte50">&ge; 50 seconds</option>
+              <option value="gte100">&ge; 100 seconds</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Disconnection Reason (multi)</label>
+            <select id="disconnectionReasons" multiple size="6"></select>
+            <div class="hint">Tip: Ctrl/⌘ click to multi-select</div>
+          </div>
+
+          <div>
+            <label>Call Disposition (multi)</label>
+            <select id="callDispositions" multiple size="6"></select>
+            <div class="hint">Tip: Ctrl/⌘ click to multi-select</div>
+          </div>
+
+          <div>
+            <label>Page size</label>
+            <select id="pageSize">
+              <option>10</option>
+              <option selected>25</option>
+              <option>50</option>
+              <option>100</option>
+              <option>200</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <button id="applyBtn">Apply Filters</button>
+          <button id="resetBtn" class="secondary">Reset</button>
+          <button id="downloadBtn" class="secondary">Download CSV (filtered)</button>
+          <div id="status" class="status"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="tableWrap">
+          <table id="resultsTable">
+            <thead>
+              <tr>
+                <th>Call Start (ET)</th>
+                <th>Phone</th>
+                <th>Count</th>
+                <th>Disposition</th>
+                <th>Disconnect Reason</th>
+                <th>Duration (s)</th>
+                <th>Agent</th>
+                <th>Campaign</th>
+                <th>List</th>
+                <th>Lead Name</th>
+                <th>Vendor</th>
+                <th>Recording</th>
+                <th>Public Log</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+        </div>
+
+        <div class="pager">
+          <button id="prevBtn" class="secondary">Prev</button>
+          <div id="pageInfo"></div>
+          <button id="nextBtn" class="secondary">Next</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/public/app.js"></script>
+  </body>
+</html>
