@@ -32,7 +32,11 @@ let db;
 
 async function getDb() {
   if (db) return db;
-  client = new MongoClient(MONGO_URI, { maxPoolSize: 20 });
+  client = new MongoClient(MONGO_URI, {
+    maxPoolSize: 20,
+    // Increase server selection timeout so slow / distant clusters don't immediately fail
+    serverSelectionTimeoutMS: 10000000
+  });
   await client.connect();
   db = client.db(DB_NAME);
   console.log("✅ Connected to MongoDB");
@@ -53,12 +57,63 @@ function parseDate(val) {
   return d;
 }
 
-function buildMatchFromFilters(q) {
-  // Fixed constraints from your example
-  const match = {
-    "body.event": "call_analyzed",
-    "body.call.direction": "outbound"
+// Debug helper: show Dates in a Mongo-shell-like way.
+// IMPORTANT: This is for logging only; the real pipeline uses actual Date objects.
+function toIsoDateStringForLog(value) {
+  if (value instanceof Date) return `ISODate("${value.toISOString()}")`;
+  if (Array.isArray(value)) return value.map(toIsoDateStringForLog);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = toIsoDateStringForLog(v);
+    return out;
+  }
+  return value;
+}
+
+/** outbound | inbound | both — drives $match on direction + which number field maps to customer phone */
+function getCallDirectionMode(q) {
+  const v = String(q.callDirection || "outbound").toLowerCase().trim();
+  if (v === "inbound") return "inbound";
+  if (v === "both" || v === "all") return "both";
+  return "outbound";
+}
+
+function buildPhoneStrAddFieldsStage(directionMode) {
+  // Outbound: customer on to_number. Inbound: customer on from_number (swap).
+  const customerE164 =
+    directionMode === "inbound"
+      ? "$body.call.from_number"
+      : directionMode === "outbound"
+        ? "$body.call.to_number"
+        : {
+            $cond: [
+              { $eq: ["$body.call.direction", "inbound"] },
+              "$body.call.from_number",
+              "$body.call.to_number"
+            ]
+          };
+
+  return {
+    $addFields: {
+      phone_str: {
+        $substrBytes: [{ $ifNull: [customerE164, ""] }, 2, 10]
+      }
+    }
   };
+}
+
+function buildMatchFromFilters(q) {
+  const directionMode = getCallDirectionMode(q);
+
+  const match = {
+    "body.event": "call_analyzed"
+  };
+
+  if (directionMode === "both") {
+    match["body.call.direction"] = { $in: ["inbound", "outbound"] };
+  } else {
+    match["body.call.direction"] = directionMode;
+  }
 
   // Date range (createdAt)
   const from = parseDate(q.from);
@@ -82,34 +137,61 @@ function buildMatchFromFilters(q) {
   }
 
   // Duration buckets (seconds) - apply only if selected
-  // durationBucket = "gte10" | "gte50" | "gte100" | ""
+  // durationBucket = "gte3" | "gte10" | "gte30" | "gte60" | "gte120" | ""
   const durationBucket = String(q.durationBucket || "");
   const field = "body.call.call_cost.total_duration_seconds";
+  if (durationBucket === "gte3") match[field] = { $gte: 3 };
   if (durationBucket === "gte10") match[field] = { $gte: 10 };
-  if (durationBucket === "gte50") match[field] = { $gte: 50 };
-  if (durationBucket === "gte100") match[field] = { $gte: 100 };
+  if (durationBucket === "gte30") match[field] = { $gte: 30 };
+  if (durationBucket === "gte60") match[field] = { $gte: 60 };
+  if (durationBucket === "gte120") match[field] = { $gte: 120 };
 
-  return match;
+  return { match, directionMode };
 }
 
-function buildBasePipeline(match) {
+function buildBasePipeline(match, directionMode) {
   return [
+    // IMPORTANT: match MUST include all user-selected constraints (date, duration, reasons, dispositions)
     { $match: match },
 
-    // Normalize phone once: remove "+1" (your logic)
+    // ---- Safe phone extraction (+1XXXXXXXXXX -> XXXXXXXXXX) ----
+    // outbound: to_number | inbound: from_number | both: pick by body.call.direction
+    buildPhoneStrAddFieldsStage(directionMode),
     {
       $addFields: {
         phone: {
-          $toLong: { $substr: ["$body.call.to_number", 2, 10] }
+          $cond: [
+            {
+              $regexMatch: {
+                input: "$phone_str",
+                regex: /^[0-9]{10}$/
+              }
+            },
+            {
+              $convert: {
+                input: "$phone_str",
+                to: "long",
+                onError: null,
+                onNull: null
+              }
+            },
+            null
+          ]
         }
       }
     },
+    // Ignore docs where we couldn't extract a valid 10-digit number
+    { $match: { phone: { $ne: null } } },
 
-    // NOTE: Requires MongoDB 5.0+ (window functions)
+    // Per-phone count across the matched dataset
     {
       $setWindowFields: {
         partitionBy: "$phone",
-        output: { phone_entry_count: { $count: {} } }
+        output: {
+          phone_entry_count: {
+            $count: {}
+          }
+        }
       }
     },
 
@@ -128,12 +210,17 @@ function buildBasePipeline(match) {
         phone_number: "$phone",
         phone_entry_count: 1,
         call_id: "$body.call.call_id",
+        CombinedRetellCost: "$body.call.call_cost.combined_cost",
         disconnection_reason: "$body.call.disconnection_reason",
         call_duration_seconds: "$body.call.call_cost.total_duration_seconds",
+        ToNumber: "$body.call.to_number",
+        FromNumber: "$body.call.from_number",
         call_disposition: "$body.call.call_analysis.custom_analysis_data.call_disposition",
         call_direction: "$body.call.direction",
         agent_id: "$body.call.agent_id",
         call_start_time: "$body.call.start_timestamp",
+
+        // epoch millis -> ET formatted string
         call_start_time_est: {
           $dateToString: {
             date: { $toDate: "$body.call.start_timestamp" },
@@ -141,11 +228,11 @@ function buildBasePipeline(match) {
             format: "%Y-%m-%d %H:%M:%S"
           }
         },
+
         public_log_url: "$body.call.public_log_url",
         recording_url: "$body.call.recording_url",
         campaign_id: "$body.call.vicidialRequestBody.campaign_id",
         list_id: "$body.call.vicidialRequestBody.list_id",
-
         first_name: { $arrayElemAt: ["$matched_data.fname", 0] },
         last_name: { $arrayElemAt: ["$matched_data.lname", 0] },
         dob: { $arrayElemAt: ["$matched_data.dob", 0] },
@@ -157,6 +244,7 @@ function buildBasePipeline(match) {
         Lead_type: { $arrayElemAt: ["$matched_data.type", 0] },
         LeadBoughtDate: { $arrayElemAt: ["$matched_data.createdAt", 0] },
 
+        // LeadBoughtDate -> ET formatted string + date-only
         LeadBoughtDate_est: {
           $cond: [
             { $ne: [{ $arrayElemAt: ["$matched_data.createdAt", 0] }, null] },
@@ -183,6 +271,7 @@ function buildBasePipeline(match) {
             null
           ]
         },
+
         Vendor: { $arrayElemAt: ["$matched_data.vendor", 0] }
       }
     }
@@ -197,23 +286,43 @@ app.get("/", (req, res) => {
 // ---- Filters metadata (distinct lists for dropdowns) ----
 app.get("/api/meta", async (req, res) => {
   try {
-    const db = await getDb();
-    const col = db.collection("transcriptions");
+    // Hard-coded lists provided by you so that
+    // the dashboard always shows all options on load.
+    const disconnectionReasons = [
+      "no_answer",
+      "adc",
+      "voicemail_reached",
+      "user_hangup",
+      "agent_hangup",
+      "pdrop",
+      "inactivity",
+      "busy",
+      "call_transfer",
+      "error_unknown",
+      "max_duration_reached"
+    ];
 
-    // Keep it consistent with your fixed constraints
-    const baseMatch = {
-      "body.event": "call_analyzed",
-      "body.call.direction": "outbound"
-    };
-
-    const [disconnectionReasons, callDispositions] = await Promise.all([
-      col.distinct("body.call.disconnection_reason", baseMatch),
-      col.distinct("body.call.call_analysis.custom_analysis_data.call_disposition", baseMatch)
-    ]);
+    const callDispositions = [
+      "NA",
+      "ADC",
+      "VM",
+      "HU",
+      "NHO",
+      "PDROP",
+      "NI",
+      "DNC",
+      "CALLBK",
+      "INA",
+      "BUSY",
+      "WN",
+      "LB",
+      "AA",
+      "XFER"
+    ];
 
     res.json({
-      disconnectionReasons: (disconnectionReasons || []).filter(Boolean).sort(),
-      callDispositions: (callDispositions || []).filter(Boolean).sort()
+      disconnectionReasons,
+      callDispositions
     });
   } catch (e) {
     console.error(e);
@@ -224,14 +333,39 @@ app.get("/api/meta", async (req, res) => {
 // ---- Main data endpoint (pagination) ----
 app.get("/api/transcriptions", async (req, res) => {
   try {
+    const started = Date.now();
+    // console.log("========================================");
+    // console.log("[API] /api/transcriptions called");
+    // console.log("[API] Raw query params:", req.query);
+
     const db = await getDb();
     const col = db.collection("transcriptions");
 
     const page = Math.max(parseInt(req.query.page || "1", 10), 1);
-    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize || "25", 10), 1), 200);
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize || "1000", 10), 1), 1000);
 
-    const match = buildMatchFromFilters(req.query);
-    const base = buildBasePipeline(match);
+    const { match, directionMode } = buildMatchFromFilters(req.query);
+    //console.log("[API] Match stage:", JSON.stringify(match, null, 2));
+    if (match.createdAt) {
+      console.log(
+        "[API] createdAt types:",
+        "gte ->",
+        match.createdAt.$gte,
+        "type:",
+        typeof match.createdAt.$gte,
+        "isDate:",
+        match.createdAt.$gte instanceof Date,
+        "| lte ->",
+        match.createdAt.$lte,
+        "type:",
+        typeof match.createdAt.$lte,
+        "isDate:",
+        match.createdAt.$lte instanceof Date
+      );
+    }
+
+    const base = buildBasePipeline(match, directionMode);
+    console.log("[API] Base pipeline stages:", base.length, "directionMode:", directionMode);
 
     // Sort newest first (you can change)
     const sortStage = { $sort: { call_start_time: -1 } };
@@ -247,9 +381,25 @@ app.get("/api/transcriptions", async (req, res) => {
       }
     ];
 
+    // console.log("[API] Final pipeline length (stages):", pipeline.length);
+    console.log(
+      "[API] Final aggregation pipeline (debug):",
+      JSON.stringify(toIsoDateStringForLog(pipeline), null, 2)
+    );
+
     const agg = await col.aggregate(pipeline, { allowDiskUse: true }).toArray();
+    const durationMs = Date.now() - started;
+
     const out = agg[0] || { data: [], total: [] };
     const total = out.total?.[0]?.count || 0;
+
+    // console.log("[API] Aggregation finished in ms:", durationMs);
+    // console.log("[API] Total rows:", total);
+    if (out.data && out.data.length) {
+      console.log("[API] Sample row:", out.data[0]);
+    } else {
+      console.log("[API] No rows returned");
+    }
 
     res.json({
       page,
@@ -270,8 +420,8 @@ app.get("/api/transcriptions/export.csv", async (req, res) => {
     const db = await getDb();
     const col = db.collection("transcriptions");
 
-    const match = buildMatchFromFilters(req.query);
-    const base = buildBasePipeline(match);
+    const { match, directionMode } = buildMatchFromFilters(req.query);
+    const base = buildBasePipeline(match, directionMode);
 
     const sortStage = { $sort: { call_start_time: -1 } };
 
@@ -287,18 +437,21 @@ app.get("/api/transcriptions/export.csv", async (req, res) => {
     const stringifier = stringify({
       header: true,
       columns: [
+        "call_id",
         "phone_number",
         "phone_entry_count",
-        "call_id",
+        "CombinedRetellCost",
         "disconnection_reason",
         "call_duration_seconds",
+        "ToNumber",
+        "FromNumber",
         "call_disposition",
         "call_direction",
         "agent_id",
         "call_start_time",
         "call_start_time_est",
-        "public_log_url",
         "recording_url",
+        "public_log_url",
         "campaign_id",
         "list_id",
         "first_name",

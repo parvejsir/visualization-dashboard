@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Transcriptions Dashboard</title>
+    <title>AI Summary Dashboard</title>
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
   <body>
     <div class="container">
-      <h1>Transcriptions Dashboard</h1>
+      <h1>AI Dialed Summary Dashboard</h1>
 
       <div class="card">
         <div class="grid">
@@ -26,10 +26,22 @@
             <label>Duration bucket</label>
             <select id="durationBucket">
               <option value="">(ignore)</option>
+              <option value="gte3">&ge; 3 seconds</option>
               <option value="gte10">&ge; 10 seconds</option>
-              <option value="gte50">&ge; 50 seconds</option>
-              <option value="gte100">&ge; 100 seconds</option>
+              <option value="gte30">&ge; 30 seconds</option>
+              <option value="gte60">&ge; 60 seconds</option>
+              <option value="gte120">&ge; 120 seconds</option>
             </select>
+          </div>
+
+          <div>
+            <label>Call direction</label>
+            <select id="callDirection">
+              <option value="outbound" selected>Outbound (customer = to #)</option>
+              <option value="inbound">Inbound (customer = from #)</option>
+              <option value="both">Both (match each row by direction)</option>
+            </select>
+            <div class="hint">Phone used for lead match: outbound → <code>to_number</code>, inbound → <code>from_number</code></div>
           </div>
 
           <div>
@@ -47,11 +59,9 @@
           <div>
             <label>Page size</label>
             <select id="pageSize">
-              <option>10</option>
-              <option selected>25</option>
-              <option>50</option>
-              <option>100</option>
               <option>200</option>
+              <option>500</option>
+              <option selected>1000</option>
             </select>
           </div>
         </div>
@@ -69,19 +79,36 @@
           <table id="resultsTable">
             <thead>
               <tr>
-                <th>Call Start (ET)</th>
-                <th>Phone</th>
-                <th>Count</th>
-                <th>Disposition</th>
-                <th>Disconnect Reason</th>
+                <th>Call ID</th>
+                <th>Phone #</th>
+                <th>Phone count</th>
+                <th>Combined cost</th>
+                <th>Disconnect reason</th>
                 <th>Duration (s)</th>
+                <th>To #</th>
+                <th>From #</th>
+                <th>Disposition</th>
+                <th>Direction</th>
                 <th>Agent</th>
+                <th>Call start (raw)</th>
+                <th>Call start (ET)</th>
+                <th>Recording</th>
+                <th>Public log</th>
                 <th>Campaign</th>
                 <th>List</th>
-                <th>Lead Name</th>
+                <th>First name</th>
+                <th>Last name</th>
+                <th>DOB</th>
+                <th>Address</th>
+                <th>City</th>
+                <th>State</th>
+                <th>Zip</th>
+                <th>Gender</th>
+                <th>Lead type</th>
+                <th>Lead bought</th>
+                <th>Lead bought (ET)</th>
+                <th>Lead bought (date)</th>
                 <th>Vendor</th>
-                <th>Recording</th>
-                <th>Public Log</th>
               </tr>
             </thead>
             <tbody id="resultsBody"></tbody>
@@ -92,6 +119,25 @@
           <button id="prevBtn" class="secondary">Prev</button>
           <div id="pageInfo"></div>
           <button id="nextBtn" class="secondary">Next</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Full-page loader (Apply filters, pagination, CSV) -->
+    <div
+      id="globalLoader"
+      class="global-loader hidden"
+      aria-hidden="true"
+      aria-busy="false"
+      role="status"
+    >
+      <div class="global-loader__backdrop"></div>
+      <div class="global-loader__panel">
+        <div class="global-loader__spinner" aria-hidden="true"></div>
+        <p id="loaderMessage" class="global-loader__msg">Loading…</p>
+        <p class="global-loader__hint">Large exports can take a minute — please keep this tab open.</p>
+        <div class="global-loader__bar" aria-hidden="true">
+          <div class="global-loader__bar-inner"></div>
         </div>
       </div>
     </div>
