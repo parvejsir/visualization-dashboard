@@ -74,6 +74,38 @@
         </div>
       </div>
 
+      <!-- Executive analytics (same filters as table; full filtered population) -->
+      <div id="vizSection" class="viz-section hidden" aria-label="Analytics summary">
+        <h2 class="viz-heading">Executive summary <span class="viz-sub">(all rows matching current filters)</span></h2>
+        <div id="vizKpis" class="viz-kpis"></div>
+        <div class="viz-grid">
+          <div class="viz-card">
+            <canvas id="chartDisposition" width="400" height="280"></canvas>
+          </div>
+          <div class="viz-card">
+            <canvas id="chartDisconnect" width="400" height="280"></canvas>
+          </div>
+          <div class="viz-card">
+            <canvas id="chartDirection" width="400" height="280"></canvas>
+          </div>
+          <div class="viz-card">
+            <canvas id="chartDuration" width="400" height="260"></canvas>
+          </div>
+          <div class="viz-card viz-card--wide">
+            <canvas id="chartLeadType" width="600" height="320"></canvas>
+          </div>
+          <div class="viz-card viz-card--wide">
+            <canvas id="chartVendor" width="600" height="320"></canvas>
+          </div>
+          <div class="viz-card viz-card--full">
+            <canvas id="chartLeadBoughtDate" width="900" height="280"></canvas>
+          </div>
+          <div class="viz-card viz-card--full">
+            <canvas id="chartLeadTypeBuyDate" width="900" height="360"></canvas>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="tableWrap">
           <table id="resultsTable">
@@ -142,6 +174,8 @@
       </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+    <script src="/public/viz.js"></script>
     <script src="/public/app.js"></script>
   </body>
 </html>

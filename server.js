@@ -278,6 +278,199 @@ function buildBasePipeline(match, directionMode) {
   ];
 }
 
+/**
+ * Same filtered population as the table (match → phone → lookup leads), without $setWindowFields / $project.
+ * Used only for executive summary charts across the full filtered set (not the current page).
+ */
+function buildStatsPipeline(match, directionMode) {
+  const phoneConvert = {
+    $addFields: {
+      phone: {
+        $cond: [
+          {
+            $regexMatch: {
+              input: "$phone_str",
+              regex: /^[0-9]{10}$/
+            }
+          },
+          {
+            $convert: {
+              input: "$phone_str",
+              to: "long",
+              onError: null,
+              onNull: null
+            }
+          },
+          null
+        ]
+      }
+    }
+  };
+
+  return [
+    { $match: match },
+    buildPhoneStrAddFieldsStage(directionMode),
+    phoneConvert,
+    { $match: { phone: { $ne: null } } },
+    {
+      $lookup: {
+        from: "realtimeleads",
+        localField: "phone",
+        foreignField: "phone",
+        as: "matched_data"
+      }
+    },
+    {
+      $addFields: {
+        _dispo: { $ifNull: ["$body.call.call_analysis.custom_analysis_data.call_disposition", ""] },
+        _disc: { $ifNull: ["$body.call.disconnection_reason", ""] },
+        _dur: { $ifNull: ["$body.call.call_cost.total_duration_seconds", 0] },
+        _dir: { $ifNull: ["$body.call.direction", ""] },
+        _leadType: { $ifNull: [{ $arrayElemAt: ["$matched_data.type", 0] }, ""] },
+        _vendor: { $ifNull: [{ $arrayElemAt: ["$matched_data.vendor", 0] }, ""] },
+        _leadBoughtDateOnly: {
+          $cond: [
+            { $ne: [{ $arrayElemAt: ["$matched_data.createdAt", 0] }, null] },
+            {
+              $dateToString: {
+                date: { $arrayElemAt: ["$matched_data.createdAt", 0] },
+                timezone: "America/New_York",
+                format: "%Y-%m-%d"
+              }
+            },
+            ""
+          ]
+        }
+      }
+    },
+    {
+      $facet: {
+        meta: [{ $count: "total" }],
+        byDisposition: [
+          {
+            $group: {
+              _id: { $cond: [{ $eq: ["$_dispo", ""] }, "(none)", "$_dispo"] },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { count: -1 } }
+        ],
+        byDisconnect: [
+          {
+            $group: {
+              _id: { $cond: [{ $eq: ["$_disc", ""] }, "(none)", "$_disc"] },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { count: -1 } }
+        ],
+        byDirection: [{ $group: { _id: { $cond: [{ $eq: ["$_dir", ""] }, "(unknown)", "$_dir"] }, count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+        durationThresholds: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              gte10: { $sum: { $cond: [{ $gte: ["$_dur", 10] }, 1, 0] } },
+              gte30: { $sum: { $cond: [{ $gte: ["$_dur", 30] }, 1, 0] } },
+              gte60: { $sum: { $cond: [{ $gte: ["$_dur", 60] }, 1, 0] } },
+              gte120: { $sum: { $cond: [{ $gte: ["$_dur", 120] }, 1, 0] } }
+            }
+          }
+        ],
+        byLeadType: [
+          {
+            $group: {
+              _id: { $cond: [{ $eq: ["$_leadType", ""] }, "(no type)", "$_leadType"] },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { count: -1 } },
+          { $limit: 25 }
+        ],
+        byVendor: [
+          {
+            $group: {
+              _id: { $cond: [{ $eq: ["$_vendor", ""] }, "(no vendor)", "$_vendor"] },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { count: -1 } },
+          { $limit: 25 }
+        ],
+        byLeadBoughtDate: [
+          {
+            $group: {
+              _id: { $cond: [{ $eq: ["$_leadBoughtDateOnly", ""] }, "(unknown)", "$_leadBoughtDateOnly"] },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { _id: 1 } },
+          { $limit: 90 }
+        ],
+        leadTypeByBuyDate: [
+          {
+            $group: {
+              _id: {
+                lt: { $cond: [{ $eq: ["$_leadType", ""] }, "(no type)", "$_leadType"] },
+                bd: { $cond: [{ $eq: ["$_leadBoughtDateOnly", ""] }, "(unknown)", "$_leadBoughtDateOnly"] }
+              },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { count: -1 } },
+          { $limit: 100 }
+        ]
+      }
+    }
+  ];
+}
+
+function withPct(rows, total) {
+  const t = Math.max(1, total);
+  return (rows || []).map((r) => ({
+    key: r._id,
+    count: r.count,
+    pct: Math.round((r.count / t) * 1000) / 10
+  }));
+}
+
+function formatStatsResult(facetOut) {
+  const f = facetOut || {};
+  const total = f.meta?.[0]?.total ?? 0;
+  const dur = f.durationThresholds?.[0] || { total: 0, gte10: 0, gte30: 0, gte60: 0, gte120: 0 };
+  const t = Math.max(1, total);
+
+  return {
+    totalCalls: total,
+    durationSummary: {
+      total: dur.total || total,
+      gte10: dur.gte10 ?? 0,
+      gte30: dur.gte30 ?? 0,
+      gte60: dur.gte60 ?? 0,
+      gte120: dur.gte120 ?? 0,
+      pctGte10: Math.round(((dur.gte10 ?? 0) / t) * 1000) / 10,
+      pctGte30: Math.round(((dur.gte30 ?? 0) / t) * 1000) / 10,
+      pctGte60: Math.round(((dur.gte60 ?? 0) / t) * 1000) / 10,
+      pctGte120: Math.round(((dur.gte120 ?? 0) / t) * 1000) / 10
+    },
+    byDisposition: withPct(f.byDisposition, total),
+    byDisconnectionReason: withPct(f.byDisconnect, total),
+    byDirection: withPct(f.byDirection, total),
+    byLeadType: withPct(f.byLeadType, total),
+    byVendor: withPct(f.byVendor, total),
+    byLeadBoughtDate: (f.byLeadBoughtDate || []).map((r) => ({
+      date: r._id,
+      count: r.count
+    })),
+    leadTypeByBuyDate: (f.leadTypeByBuyDate || []).map((r) => ({
+      leadType: r._id?.lt ?? "(no type)",
+      buyDate: r._id?.bd ?? "(unknown)",
+      count: r.count,
+      label: `${r._id?.lt ?? "?"} · ${r._id?.bd ?? "?"}`
+    }))
+  };
+}
+
 // ---- Views ----
 app.get("/", (req, res) => {
   res.render("dashboard");
@@ -411,6 +604,26 @@ app.get("/api/transcriptions", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Query failed" });
+  }
+});
+
+// ---- Stats for charts (full filtered set; same filters as table, ignores pagination) ----
+app.get("/api/transcriptions/stats", async (req, res) => {
+  try {
+    const db = await getDb();
+    const col = db.collection("transcriptions");
+
+    const { match, directionMode } = buildMatchFromFilters(req.query);
+    const pipeline = buildStatsPipeline(match, directionMode);
+
+    const agg = await col.aggregate(pipeline, { allowDiskUse: true }).toArray();
+    const facet = agg[0] || {};
+    const stats = formatStatsResult(facet);
+
+    res.json(stats);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Stats query failed" });
   }
 });
 

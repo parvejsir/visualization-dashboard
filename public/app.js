@@ -226,12 +226,13 @@ async function loadMeta() {
 }
 
 /**
- * @param {{ showLoader?: boolean }} opts
+ * @param {{ showLoader?: boolean, refreshStats?: boolean }} opts
  * showLoader: true only when user explicitly applies filters (Apply button).
- * Initial load, reset, prev/next stay quiet — no overlay.
+ * refreshStats: false on Prev/Next (charts stay for current filter set); true otherwise.
  */
 async function loadData(opts = {}) {
   const useOverlay = opts.showLoader === true;
+  const refreshStats = opts.refreshStats !== false;
 
   if (useOverlay) {
     showLoader("Loading results… This may take a while for large date ranges or page sizes.");
@@ -242,8 +243,31 @@ async function loadData(opts = {}) {
     const qs = buildQueryString();
     state.lastQueryString = qs;
 
-    const res = await fetch(`/api/transcriptions?${qs}`);
-    const json = await res.json();
+    let res;
+    let json;
+    let statsJson = null;
+
+    if (refreshStats) {
+      const statsParams = new URLSearchParams(qs);
+      statsParams.delete("page");
+      statsParams.delete("pageSize");
+      const statsUrl = `/api/transcriptions/stats?${statsParams.toString()}`;
+      const [r, sr] = await Promise.all([
+        fetch(`/api/transcriptions?${qs}`),
+        fetch(statsUrl)
+      ]);
+      res = r;
+      json = await res.json();
+      if (sr.ok) {
+        statsJson = await sr.json();
+      } else {
+        console.warn("[UI] /api/transcriptions/stats failed:", sr.status);
+      }
+    } else {
+      res = await fetch(`/api/transcriptions?${qs}`);
+      json = await res.json();
+    }
+
     console.log("[UI] /api/transcriptions payload (truncated):", {
       page: json.page,
       pageSize: json.pageSize,
@@ -256,6 +280,7 @@ async function loadData(opts = {}) {
       setStatus(json.error || "Failed");
       renderTable([]);
       renderPager(0, 1);
+      if (refreshStats && window.DashboardViz) window.DashboardViz.clear();
       return;
     }
 
@@ -263,11 +288,20 @@ async function loadData(opts = {}) {
     renderTable(json.data || []);
     renderPager(json.total || 0, state.totalPages);
     if (useOverlay) setStatus("");
+
+    if (refreshStats && window.DashboardViz) {
+      if (statsJson) {
+        window.DashboardViz.update(statsJson);
+      } else {
+        window.DashboardViz.clear();
+      }
+    }
   } catch (e) {
     console.error(e);
     setStatus("Request failed — check connection and try again");
     renderTable([]);
     renderPager(0, 1);
+    if (opts.refreshStats !== false && window.DashboardViz) window.DashboardViz.clear();
   } finally {
     if (useOverlay) hideLoader();
   }
@@ -298,12 +332,12 @@ $("resetBtn").addEventListener("click", async () => {
 
 $("prevBtn").addEventListener("click", async () => {
   state.page = Math.max(state.page - 1, 1);
-  await loadData();
+  await loadData({ refreshStats: false });
 });
 
 $("nextBtn").addEventListener("click", async () => {
   state.page = Math.min(state.page + 1, state.totalPages);
-  await loadData();
+  await loadData({ refreshStats: false });
 });
 
 $("downloadBtn").addEventListener("click", async () => {
