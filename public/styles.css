@@ -255,9 +255,42 @@ a:hover {
 
 .viz-kpis {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.viz-kpi-row {
+  display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 16px;
+}
+
+.viz-section-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #9bb6ff;
+  letter-spacing: 0.02em;
+}
+
+.viz-subsection-title {
+  margin: 28px 0 6px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #e8ebff;
+}
+
+.viz-subsection-desc {
+  margin: 0 0 14px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.82;
+  max-width: 900px;
+}
+
+.viz-grid--second {
+  margin-bottom: 0;
 }
 
 .viz-kpi {

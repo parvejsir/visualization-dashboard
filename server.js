@@ -419,6 +419,82 @@ function buildStatsPipeline(match, directionMode) {
           },
           { $sort: { count: -1 } },
           { $limit: 100 }
+        ],
+
+        // ---- Unique leads (dedupe by $phone within filtered set) ----
+        uniqueLeadDialMetrics: [
+          { $group: { _id: "$phone", dialCount: { $sum: 1 } } },
+          {
+            $group: {
+              _id: null,
+              totalUniqueLeads: { $sum: 1 },
+              atLeast2: { $sum: { $cond: [{ $gte: ["$dialCount", 2] }, 1, 0] } },
+              atLeast3: { $sum: { $cond: [{ $gte: ["$dialCount", 3] }, 1, 0] } },
+              atLeast5: { $sum: { $cond: [{ $gte: ["$dialCount", 5] }, 1, 0] } },
+              atLeast10: { $sum: { $cond: [{ $gte: ["$dialCount", 10] }, 1, 0] } }
+            }
+          }
+        ],
+        uniqueLeadByVendor: [
+          { $group: { _id: "$phone", vendor: { $first: "$_vendor" } } },
+          {
+            $group: {
+              _id: {
+                $cond: [
+                  { $or: [{ $eq: ["$vendor", ""] }, { $eq: ["$vendor", null] }] },
+                  "(no vendor)",
+                  "$vendor"
+                ]
+              },
+              uniqueLeads: { $sum: 1 }
+            }
+          },
+          { $sort: { uniqueLeads: -1 } },
+          { $limit: 30 }
+        ],
+        uniqueLeadByLeadType: [
+          { $group: { _id: "$phone", leadType: { $first: "$_leadType" } } },
+          {
+            $group: {
+              _id: { $cond: [{ $eq: ["$leadType", ""] }, "(no type)", "$leadType"] },
+              uniqueLeads: { $sum: 1 }
+            }
+          },
+          { $sort: { uniqueLeads: -1 } },
+          { $limit: 25 }
+        ],
+        uniqueLeadByBuyDate: [
+          { $group: { _id: "$phone", buyDate: { $first: "$_leadBoughtDateOnly" } } },
+          {
+            $group: {
+              _id: { $cond: [{ $eq: ["$buyDate", ""] }, "(unknown)", "$buyDate"] },
+              uniqueLeads: { $sum: 1 }
+            }
+          },
+          { $sort: { _id: 1 } },
+          { $limit: 90 }
+        ],
+        dialCountHistogram: [
+          { $group: { _id: "$phone", dialCount: { $sum: 1 } } },
+          {
+            $group: {
+              _id: {
+                $switch: {
+                  branches: [
+                    { case: { $eq: ["$dialCount", 1] }, then: "1 call" },
+                    { case: { $eq: ["$dialCount", 2] }, then: "2 calls" },
+                    { case: { $eq: ["$dialCount", 3] }, then: "3 calls" },
+                    {
+                      case: { $and: [{ $gte: ["$dialCount", 4] }, { $lte: ["$dialCount", 9] }] },
+                      then: "4–9 calls"
+                    }
+                  ],
+                  default: "10+ calls"
+                }
+              },
+              uniqueLeads: { $sum: 1 }
+            }
+          }
         ]
       }
     }
@@ -434,14 +510,62 @@ function withPct(rows, total) {
   }));
 }
 
+/** For unique-lead breakdowns: pct is share of unique leads (not total calls). */
+function withUniqueLeadPct(rows, uniqueTotal) {
+  const t = Math.max(1, uniqueTotal);
+  return (rows || []).map((r) => ({
+    key: r._id,
+    uniqueLeads: r.uniqueLeads,
+    pct: Math.round((r.uniqueLeads / t) * 1000) / 10
+  }));
+}
+
+const DIAL_HIST_ORDER = ["1 call", "2 calls", "3 calls", "4–9 calls", "10+ calls"];
+
+function sortDialHistogram(rows) {
+  const list = rows || [];
+  return [...list].sort(
+    (a, b) => DIAL_HIST_ORDER.indexOf(a.bucket) - DIAL_HIST_ORDER.indexOf(b.bucket)
+  );
+}
+
 function formatStatsResult(facetOut) {
   const f = facetOut || {};
   const total = f.meta?.[0]?.total ?? 0;
   const dur = f.durationThresholds?.[0] || { total: 0, gte10: 0, gte30: 0, gte60: 0, gte120: 0 };
   const t = Math.max(1, total);
 
+  const um = f.uniqueLeadDialMetrics?.[0] || {};
+  const uniqueTotal = um.totalUniqueLeads ?? 0;
+  const uq = Math.max(1, uniqueTotal);
+
   return {
     totalCalls: total,
+    uniqueLeads: {
+      total: uniqueTotal,
+      avgDialsPerUnique:
+        uniqueTotal > 0 && total > 0 ? Math.round((total / uniqueTotal) * 100) / 100 : 0,
+      redialAtLeast2: um.atLeast2 ?? 0,
+      redialAtLeast3: um.atLeast3 ?? 0,
+      redialAtLeast5: um.atLeast5 ?? 0,
+      redialAtLeast10: um.atLeast10 ?? 0,
+      pctUniqueWithAtLeast2: Math.round(((um.atLeast2 ?? 0) / uq) * 1000) / 10,
+      pctUniqueWithAtLeast3: Math.round(((um.atLeast3 ?? 0) / uq) * 1000) / 10,
+      pctUniqueWithAtLeast5: Math.round(((um.atLeast5 ?? 0) / uq) * 1000) / 10,
+      pctUniqueWithAtLeast10: Math.round(((um.atLeast10 ?? 0) / uq) * 1000) / 10
+    },
+    uniqueByVendor: withUniqueLeadPct(f.uniqueLeadByVendor, uniqueTotal),
+    uniqueByLeadType: withUniqueLeadPct(f.uniqueLeadByLeadType, uniqueTotal),
+    uniqueByLeadBoughtDate: (f.uniqueLeadByBuyDate || []).map((r) => ({
+      date: r._id,
+      uniqueLeads: r.uniqueLeads
+    })),
+    dialCountHistogram: sortDialHistogram(
+      (f.dialCountHistogram || []).map((r) => ({
+        bucket: r._id,
+        uniqueLeads: r.uniqueLeads
+      }))
+    ),
     durationSummary: {
       total: dur.total || total,
       gte10: dur.gte10 ?? 0,
