@@ -1,8 +1,28 @@
+//server.js
 const express = require("express");
 const path = require("path");
 const dotenv = require("dotenv");
 const { MongoClient } = require("mongodb");
 const { stringify } = require("csv-stringify");
+const {
+
+CONNECT_REDIS,
+
+GET_CACHE,
+
+SET_CACHE,
+
+GET_TTL,
+
+GET_HASH_FIELD,
+
+SET_HASH_FIELD,
+
+GET_MULTIPLE_FIELDS
+
+}=require(
+"./services/redisService"
+);
 
 dotenv.config();
 
@@ -86,12 +106,12 @@ function buildPhoneStrAddFieldsStage(directionMode) {
       : directionMode === "outbound"
         ? "$body.call.to_number"
         : {
-            $cond: [
-              { $eq: ["$body.call.direction", "inbound"] },
-              "$body.call.from_number",
-              "$body.call.to_number"
-            ]
-          };
+          $cond: [
+            { $eq: ["$body.call.direction", "inbound"] },
+            "$body.call.from_number",
+            "$body.call.to_number"
+          ]
+        };
 
   return {
     $addFields: {
@@ -595,6 +615,276 @@ function formatStatsResult(facetOut) {
   };
 }
 
+
+/*
+--------------------------------
+
+TIME CHUNK HELPERS
+
+--------------------------------
+*/
+
+function GET_HOUR_BUCKETS(
+
+FROM,
+
+TO
+
+){
+
+const BUCKETS=[];
+
+const CURRENT=
+new Date(
+FROM
+);
+
+CURRENT.setMinutes(
+0
+);
+
+CURRENT.setSeconds(
+0
+);
+
+CURRENT.setMilliseconds(
+0
+);
+
+const END=
+new Date(
+TO
+);
+
+END.setMinutes(
+0
+);
+
+END.setSeconds(
+0
+);
+
+END.setMilliseconds(
+0
+);
+
+while(
+CURRENT<=END
+){
+
+BUCKETS.push(
+
+new Date(
+CURRENT
+)
+
+);
+
+CURRENT.setTime(
+
+CURRENT.getTime()
+
++
+
+60*
+
+60*
+
+1000
+
+);
+
+}
+
+return BUCKETS;
+
+}
+
+/*
+calls:2026-05-01
+
+field:
+
+06_outbound
+
+*/
+
+function BUILD_CHUNK_KEY(
+
+DATE
+
+){
+
+const Y=
+
+DATE.getUTCFullYear();
+
+const M=
+
+String(
+DATE.getUTCMonth()+1
+).padStart(
+2,
+"0"
+);
+
+const D=
+
+String(
+DATE.getUTCDate()
+).padStart(
+2,
+"0"
+);
+
+return `calls:${Y}-${M}-${D}`;
+
+}
+
+function BUILD_FIELD_NAME(
+
+DATE,
+
+DIRECTION
+
+){
+
+const HOUR=
+
+String(
+
+DATE.getUTCHours()
+
+).padStart(
+2,
+"0"
+);
+
+return `${HOUR}_${DIRECTION}`;
+
+}
+
+/*
+filter minute ranges
+*/
+
+function FILTER_BY_RANGE(
+
+ROWS,
+
+FROM,
+
+TO
+
+){
+
+const FROM_MS=
+
+new Date(
+FROM
+).getTime();
+
+const TO_MS=
+
+new Date(
+TO
+).getTime();
+
+return ROWS.filter(
+row=>{
+
+const T=
+
+Number(
+row.call_start_time
+);
+
+return(
+
+T>=FROM_MS &&
+
+T<=TO_MS
+
+);
+
+}
+);
+
+}
+
+async function LOAD_CHUNKS_FROM_REDIS(BUCKETS,DIRECTION){
+
+const CHUNKS=[];
+
+for(const BUCKET of BUCKETS){
+
+const KEY=
+BUILD_CHUNK_KEY(
+BUCKET
+);
+
+const FIELD=
+BUILD_FIELD_NAME(
+BUCKET,
+DIRECTION
+);
+
+const DATA=
+await GET_HASH_FIELD(
+KEY,
+FIELD
+);
+
+CHUNKS.push({
+
+key:KEY,
+
+field:FIELD,
+
+data:DATA
+
+});
+
+}
+
+return CHUNKS;
+
+}
+
+function MERGE_CHUNKS(CHUNKS){
+
+const MERGED=[];
+
+for(const CHUNK of CHUNKS){
+
+if(
+CHUNK &&
+CHUNK.data &&
+Array.isArray(
+CHUNK.data
+)
+){
+
+MERGED.push(
+...CHUNK.data
+);
+
+}
+
+}
+
+return MERGED;
+
+}
+
+function FIND_MISSING_CHUNKS(CHUNKS){
+
+return CHUNKS.filter(
+x=>!x.data
+);
+
+}
+
 // ---- Views ----
 app.get("/", (req, res) => {
   res.render("dashboard");
@@ -648,87 +938,351 @@ app.get("/api/meta", async (req, res) => {
 });
 
 // ---- Main data endpoint (pagination) ----
-app.get("/api/transcriptions", async (req, res) => {
-  try {
-    const started = Date.now();
-    // console.log("========================================");
-    // console.log("[API] /api/transcriptions called");
-    // console.log("[API] Raw query params:", req.query);
+app.get("/api/transcriptions", async (req,res)=>{
 
-    const db = await getDb();
-    const col = db.collection("transcriptions");
+try{
 
-    const page = Math.max(parseInt(req.query.page || "1", 10), 1);
-    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize || "1000", 10), 1), 1000);
+const started=
+Date.now();
 
-    const { match, directionMode } = buildMatchFromFilters(req.query);
-    //console.log("[API] Match stage:", JSON.stringify(match, null, 2));
-    if (match.createdAt) {
-      console.log(
-        "[API] createdAt types:",
-        "gte ->",
-        match.createdAt.$gte,
-        "type:",
-        typeof match.createdAt.$gte,
-        "isDate:",
-        match.createdAt.$gte instanceof Date,
-        "| lte ->",
-        match.createdAt.$lte,
-        "type:",
-        typeof match.createdAt.$lte,
-        "isDate:",
-        match.createdAt.$lte instanceof Date
-      );
-    }
+const DIRECTION=
+getCallDirectionMode(
+req.query
+);
 
-    const base = buildBasePipeline(match, directionMode);
-    console.log("[API] Base pipeline stages:", base.length, "directionMode:", directionMode);
+const PAGE=
+Math.max(
+parseInt(
+req.query.page||"1",
+10
+),
+1
+);
 
-    // Sort newest first (you can change)
-    const sortStage = { $sort: { call_start_time: -1 } };
+const PAGE_SIZE=
+Math.min(
+Math.max(
+parseInt(
+req.query.pageSize||"200",
+10
+),
+1
+),
+1000
+);
 
-    const pipeline = [
-      ...base,
-      sortStage,
-      {
-        $facet: {
-          data: [{ $skip: (page - 1) * pageSize }, { $limit: pageSize }],
-          total: [{ $count: "count" }]
-        }
-      }
-    ];
+const REDIS_STARTED=
+Date.now();
 
-    // console.log("[API] Final pipeline length (stages):", pipeline.length);
-    console.log(
-      "[API] Final aggregation pipeline (debug):",
-      JSON.stringify(toIsoDateStringForLog(pipeline), null, 2)
-    );
+const BUCKETS=
 
-    const agg = await col.aggregate(pipeline, { allowDiskUse: true }).toArray();
-    const durationMs = Date.now() - started;
+GET_HOUR_BUCKETS(
 
-    const out = agg[0] || { data: [], total: [] };
-    const total = out.total?.[0]?.count || 0;
+req.query.from,
 
-    // console.log("[API] Aggregation finished in ms:", durationMs);
-    // console.log("[API] Total rows:", total);
-    if (out.data && out.data.length) {
-      console.log("[API] Sample row:", out.data[0]);
-    } else {
-      console.log("[API] No rows returned");
-    }
+req.query.to
 
-    res.json({
-      page,
-      pageSize,
-      total,
-      totalPages: Math.ceil(total / pageSize),
-      data: out.data
-    });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Query failed" });
-  }
+);
+
+const REDIS_CHUNKS=
+
+await LOAD_CHUNKS_FROM_REDIS(
+
+BUCKETS,
+
+DIRECTION
+
+);
+
+const REDIS_LOOKUP_TIME=
+
+Date.now()
+-
+REDIS_STARTED;
+
+const MISSING_CHUNKS=
+
+FIND_MISSING_CHUNKS(
+REDIS_CHUNKS
+);
+
+console.log(
+
+`[CHUNKS]
+
+Total:
+
+${BUCKETS.length}
+
+Missing:
+
+${MISSING_CHUNKS.length}
+
+Redis Lookup:
+
+${REDIS_LOOKUP_TIME} ms`
+
+);
+
+const db=
+await getDb();
+
+const col=
+db.collection(
+"transcriptions"
+);
+
+/*
+FETCH ONLY MISSING CHUNKS
+*/
+
+for(const CHUNK of MISSING_CHUNKS){
+
+const HOUR_DATE=
+
+new Date(
+
+CHUNK.field
+?BUCKETS[
+MISSING_CHUNKS.indexOf(
+CHUNK
+)
+]
+:null
+
+);
+
+const HOUR_START=
+
+new Date(
+HOUR_DATE
+);
+
+const HOUR_END=
+
+new Date(
+HOUR_DATE
+);
+
+HOUR_END.setHours(
+HOUR_END.getHours()+1
+);
+
+const TEMP_QUERY={
+
+...req.query,
+
+from:
+HOUR_START.toISOString(),
+
+to:
+HOUR_END.toISOString()
+
+};
+
+const {
+
+match,
+
+directionMode
+
+}=
+buildMatchFromFilters(
+TEMP_QUERY
+);
+
+const BASE=
+
+buildBasePipeline(
+
+match,
+
+directionMode
+
+);
+
+const PIPELINE=[
+
+...BASE,
+
+{
+
+$sort:{
+
+call_start_time:-1
+
+}
+
+}
+
+];
+
+const AGG=
+
+await col.aggregate(
+
+PIPELINE,
+
+{
+
+allowDiskUse:true
+
+}
+
+).toArray();
+
+await SET_HASH_FIELD(
+
+CHUNK.key,
+
+CHUNK.field,
+
+AGG,
+
+Number(
+process.env.REDIS_TTL
+)
+
+);
+
+CHUNK.data=
+AGG;
+
+console.log(
+
+`[CACHE SAVE]
+
+${CHUNK.key}
+
+${CHUNK.field}
+
+rows:
+
+${AGG.length}`
+
+);
+
+}
+
+const MERGED=
+
+MERGE_CHUNKS(
+REDIS_CHUNKS
+);
+
+const FILTERED=
+
+FILTER_BY_RANGE(
+
+MERGED,
+
+req.query.from,
+
+req.query.to
+
+);
+
+const START=
+(PAGE-1)
+*
+PAGE_SIZE;
+
+const END=
+START+
+PAGE_SIZE;
+
+const PAGINATED=
+
+FILTERED.slice(
+START,
+END
+);
+
+const DURATION=
+
+Date.now()
+-
+started;
+
+console.log(
+
+`[RESULT]
+
+rows:
+
+${FILTERED.length}
+
+time:
+
+${DURATION} ms`
+
+);
+
+return res.json({
+
+page:
+PAGE,
+
+pageSize:
+PAGE_SIZE,
+
+total:
+FILTERED.length,
+
+totalPages:
+
+Math.ceil(
+
+FILTERED.length/
+
+PAGE_SIZE
+
+),
+
+data:
+PAGINATED,
+
+cache_status:
+
+MISSING_CHUNKS.length
+===0
+
+?
+
+"HIT"
+
+:
+
+"PARTIAL/MISS",
+
+mongo_time_ms:
+
+DURATION,
+
+redis_time_ms:
+
+REDIS_LOOKUP_TIME
+
+});
+
+}
+
+catch(e){
+
+console.error(
+e
+);
+
+res.status(500).json({
+
+error:
+
+"Query failed"
+
+});
+
+}
+
 });
 
 // ---- Stats for charts (full filtered set; same filters as table, ignores pagination) ----
@@ -820,6 +1374,25 @@ app.get("/api/transcriptions/export.csv", async (req, res) => {
 });
 
 app.get("/__health", (req, res) => res.send("ok"));
+
+(async () => {
+  await CONNECT_REDIS();
+})();
+
+console.log(
+
+GET_HOUR_BUCKETS(
+
+"2026-05-01T06:15:00",
+
+"2026-05-01T08:40:00"
+
+).map(
+x=>x.getHours()
+)
+
+);
+
 // ---- Start ----
 app.listen(PORT, () => {
   console.log(`🚀 Dashboard running on http://localhost:${PORT}`);

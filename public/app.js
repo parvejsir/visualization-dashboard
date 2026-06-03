@@ -1,3 +1,4 @@
+//public/app.js
 let state = {
   page: 1,
   pageSize: 1000,
@@ -231,80 +232,250 @@ async function loadMeta() {
  * refreshStats: false on Prev/Next (charts stay for current filter set); true otherwise.
  */
 async function loadData(opts = {}) {
-  const useOverlay = opts.showLoader === true;
-  const refreshStats = opts.refreshStats !== false;
 
-  if (useOverlay) {
-    showLoader("Loading results… This may take a while for large date ranges or page sizes.");
-    setStatus("Loading...");
+  const useOverlay =
+  opts.showLoader === true;
+
+  const refreshStats =
+  opts.refreshStats !== false;
+
+  if(useOverlay){
+
+    showLoader(
+      "Loading results… This may take a while for large date ranges or page sizes."
+    );
+
+    setStatus(
+      "Loading..."
+    );
+
   }
 
-  try {
-    const qs = buildQueryString();
-    state.lastQueryString = qs;
+  const FRONTEND_STARTED =
+  performance.now();
 
-    let res;
-    let json;
-    let statsJson = null;
+  try{
 
-    if (refreshStats) {
-      const statsParams = new URLSearchParams(qs);
-      statsParams.delete("page");
-      statsParams.delete("pageSize");
-      const statsUrl = `/api/transcriptions/stats?${statsParams.toString()}`;
-      const [r, sr] = await Promise.all([
-        fetch(`/api/transcriptions?${qs}`),
-        fetch(statsUrl)
-      ]);
-      res = r;
-      json = await res.json();
-      if (sr.ok) {
-        statsJson = await sr.json();
-      } else {
-        console.warn("[UI] /api/transcriptions/stats failed:", sr.status);
+    const qs =
+    buildQueryString();
+
+    state.lastQueryString =
+    qs;
+
+    console.log(
+      "[FRONTEND] Fetch Started"
+    );
+
+    const response =
+    await fetch(
+      `/api/transcriptions?${qs}`
+    );
+
+    const json =
+    await response.json();
+
+    console.log(
+
+      "[FRONTEND] API Response:",
+
+      (
+        performance.now()
+        -
+        FRONTEND_STARTED
+      ).toFixed(0),
+
+      "ms"
+
+    );
+
+    console.log(
+
+      "[FRONTEND SAMPLE]",
+
+      {
+
+        cache:
+        json.cache_status,
+
+        rows:
+        json.data?.length,
+
+        sample:
+
+        json.data?.[0]
+
       }
-    } else {
-      res = await fetch(`/api/transcriptions?${qs}`);
-      json = await res.json();
-    }
 
-    console.log("[UI] /api/transcriptions payload (truncated):", {
-      page: json.page,
-      pageSize: json.pageSize,
-      total: json.total,
-      totalPages: json.totalPages,
-      sampleRow: Array.isArray(json.data) && json.data.length ? json.data[0] : null
-    });
+    );
 
-    if (!res.ok) {
-      setStatus(json.error || "Failed");
+    if(!response.ok){
+
+      setStatus(
+        json.error ||
+        "Failed"
+      );
+
       renderTable([]);
-      renderPager(0, 1);
-      if (refreshStats && window.DashboardViz) window.DashboardViz.clear();
+
+      renderPager(
+        0,
+        1
+      );
+
       return;
+
     }
 
-    state.totalPages = json.totalPages || 1;
-    renderTable(json.data || []);
-    renderPager(json.total || 0, state.totalPages);
-    if (useOverlay) setStatus("");
+    const RENDER_STARTED =
+    performance.now();
 
-    if (refreshStats && window.DashboardViz) {
-      if (statsJson) {
-        window.DashboardViz.update(statsJson);
-      } else {
-        window.DashboardViz.clear();
-      }
+    state.totalPages =
+    json.totalPages || 1;
+
+    renderTable(
+      json.data || []
+    );
+
+    renderPager(
+
+      json.total || 0,
+
+      state.totalPages
+
+    );
+
+    console.log(
+
+      "[FRONTEND] Rendering:",
+
+      (
+        performance.now()
+        -
+        RENDER_STARTED
+      ).toFixed(0),
+
+      "ms"
+
+    );
+
+    if(useOverlay){
+
+      hideLoader();
+
+      setStatus("");
+
     }
-  } catch (e) {
-    console.error(e);
-    setStatus("Request failed — check connection and try again");
-    renderTable([]);
-    renderPager(0, 1);
-    if (opts.refreshStats !== false && window.DashboardViz) window.DashboardViz.clear();
-  } finally {
-    if (useOverlay) hideLoader();
+
+    /*
+      FETCH STATS AFTER UI RENDERS
+    */
+
+    if(
+      refreshStats &&
+      window.DashboardViz
+    ){
+
+      setTimeout(
+        async()=>{
+
+          try{
+
+            const statsParams =
+            new URLSearchParams(
+              qs
+            );
+
+            statsParams.delete(
+              "page"
+            );
+
+            statsParams.delete(
+              "pageSize"
+            );
+
+            const statsStarted =
+            performance.now();
+
+            const statsResponse =
+            await fetch(
+
+              `/api/transcriptions/stats?${
+                statsParams.toString()
+              }`
+
+            );
+
+            const statsJson =
+            await statsResponse.json();
+
+            console.log(
+
+              "[STATS] Loaded:",
+
+              (
+                performance.now()
+                -
+                statsStarted
+              ).toFixed(0),
+
+              "ms"
+
+            );
+
+            window.DashboardViz.update(
+              statsJson
+            );
+
+          }
+
+          catch(err){
+
+            console.error(
+              "[STATS ERROR]",
+              err
+            );
+
+          }
+
+        },
+
+        0
+
+      );
+
+    }
+
   }
+
+  catch(e){
+
+    console.error(
+      e
+    );
+
+    setStatus(
+      "Request Failed"
+    );
+
+    renderTable([]);
+
+    renderPager(
+      0,
+      1
+    );
+
+  }
+
+  finally{
+
+    if(useOverlay){
+
+      hideLoader();
+
+    }
+
+  }
+
 }
 
 function resetFilters() {

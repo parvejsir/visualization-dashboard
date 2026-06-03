@@ -1,3 +1,4 @@
+//public/viz.js
 /**
  * Executive charts — Chart.js (CDN). Called from app.js after /api/transcriptions/stats.
  */
