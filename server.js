@@ -1182,6 +1182,8 @@ req.query.to
 
 );
 
+
+
 const START=
 (PAGE-1)
 *
@@ -1242,26 +1244,18 @@ PAGE_SIZE
 data:
 PAGINATED,
 
+
+
 cache_status:
 
 MISSING_CHUNKS.length
-===0
-
 ?
 
-"HIT"
+"MISS"
 
 :
 
-"PARTIAL/MISS",
-
-mongo_time_ms:
-
-DURATION,
-
-redis_time_ms:
-
-REDIS_LOOKUP_TIME
+"HIT"
 
 });
 
@@ -1379,19 +1373,7 @@ app.get("/__health", (req, res) => res.send("ok"));
   await CONNECT_REDIS();
 })();
 
-console.log(
 
-GET_HOUR_BUCKETS(
-
-"2026-05-01T06:15:00",
-
-"2026-05-01T08:40:00"
-
-).map(
-x=>x.getHours()
-)
-
-);
 
 // ---- Start ----
 app.listen(PORT, () => {

@@ -370,80 +370,67 @@ async function loadData(opts = {}) {
       FETCH STATS AFTER UI RENDERS
     */
 
-    if(
-      refreshStats &&
-      window.DashboardViz
-    ){
+   /*
+FETCH STATS AFTER UI RENDERS
+*/
 
-      setTimeout(
-        async()=>{
+if (
+refreshStats &&
+window.DashboardViz
+){
 
-          try{
+setTimeout(
 
-            const statsParams =
-            new URLSearchParams(
-              qs
-            );
+async()=>{
 
-            statsParams.delete(
-              "page"
-            );
+try{
 
-            statsParams.delete(
-              "pageSize"
-            );
+const statsParams=
+new URLSearchParams(
+qs
+);
 
-            const statsStarted =
-            performance.now();
+statsParams.delete(
+"page"
+);
 
-            const statsResponse =
-            await fetch(
+statsParams.delete(
+"pageSize"
+);
 
-              `/api/transcriptions/stats?${
-                statsParams.toString()
-              }`
+const statsResponse=
+await fetch(
 
-            );
+`/api/transcriptions/stats?${
+statsParams.toString()
+}`
 
-            const statsJson =
-            await statsResponse.json();
+);
 
-            console.log(
+const statsJson=
+await statsResponse.json();
 
-              "[STATS] Loaded:",
+window.DashboardViz.update(
+statsJson
+);
 
-              (
-                performance.now()
-                -
-                statsStarted
-              ).toFixed(0),
+}
 
-              "ms"
+catch(err){
 
-            );
+console.error(
+err
+);
 
-            window.DashboardViz.update(
-              statsJson
-            );
+}
 
-          }
+},
 
-          catch(err){
+0
 
-            console.error(
-              "[STATS ERROR]",
-              err
-            );
+);
 
-          }
-
-        },
-
-        0
-
-      );
-
-    }
+}
 
   }
 
