@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Lead / Vendor Wise Analysis</title>
+  <link rel="stylesheet" href="/public/styles.css"/>
+</head>
+<body>
+<div class="an-page">
+  <div class="an-topbar">
+    <a href="/" class="an-back">&larr; Dashboard Home</a>
+    <h1 class="an-title">Lead / Vendor Wise Analysis</h1>
+    <span class="an-subtitle">Vendor lead volumes, costs, calls, transfers and conversions</span>
+  </div>
+
+  <div class="card an-filters" id="filterBar">
+    <div class="an-filter-row">
+      <div class="an-filter-group">
+        <label class="an-label">From (ET)</label>
+        <input type="datetime-local" id="fromInput" class="an-input" step="60"/>
+      </div>
+      <div class="an-filter-group">
+        <label class="an-label">To (ET)</label>
+        <input type="datetime-local" id="toInput" class="an-input" step="60"/>
+      </div>
+      <div class="an-filter-group an-filter-actions">
+        <button id="applyBtn" class="btn">Apply</button>
+        <button id="resetBtn" class="btn btn-secondary">Reset</button>
+      </div>
+    </div>
+    <span id="statusMsg" class="an-status"></span>
+  </div>
+
+  <!-- Summary KPIs -->
+  <div class="kpi-grid kpi-grid--small" id="summaryGrid" style="display:none">
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="sumVendors">—</span>
+      <span class="kpi-card__lbl">Unique Vendors</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="sumLeads">—</span>
+      <span class="kpi-card__lbl">Total Leads</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="sumLeadCost">—</span>
+      <span class="kpi-card__lbl">Total Lead Cost ($)</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="sumTransfers">—</span>
+      <span class="kpi-card__lbl">Total Transfers</span>
+    </div>
+  </div>
+
+  <!-- Two charts side-by-side -->
+  <div class="an-chart-row" id="chartsRow" style="display:none">
+    <div class="card an-chart-half">
+      <div class="an-chart-title">Lead Volume by Vendor (Top 15)</div>
+      <canvas id="leadVolChart" height="260"></canvas>
+    </div>
+    <div class="card an-chart-half">
+      <div class="an-chart-title">Transfer Rate by Vendor (Top 15)</div>
+      <canvas id="xferRateChart" height="260"></canvas>
+    </div>
+  </div>
+
+  <!-- Vendor table -->
+  <div class="card" id="tableCard" style="display:none">
+    <div class="an-table-title">Vendor Detail</div>
+    <div class="an-table-wrap">
+      <table class="an-table" id="vendorTable">
+        <thead>
+          <tr>
+            <th>Vendor</th>
+            <th>Leads</th>
+            <th>Lead Cost ($)</th>
+            <th>Calls</th>
+            <th>Transfers</th>
+            <th>Paid</th>
+            <th>Xfer Rate (%)</th>
+          </tr>
+        </thead>
+        <tbody id="vendorTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="an-empty hidden" id="emptyMsg">No data for selected range.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<script src="/public/analytics/store.js"></script>
+<script src="/public/analytics/vendor-page.js"></script>
+</body>
+</html>

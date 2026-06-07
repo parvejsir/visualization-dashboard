@@ -226,6 +226,15 @@ x
 
 }
 
+async function SET_MULTIPLE_FIELDS(KEY, FIELD_MAP, TTL) {
+  const args = [];
+  for (const [field, value] of Object.entries(FIELD_MAP)) {
+    args.push(field, JSON.stringify(value));
+  }
+  if (args.length) await REDIS_CLIENT.hSet(KEY, args);
+  await REDIS_CLIENT.expire(KEY, TTL);
+}
+
 module.exports={
 
 CONNECT_REDIS,
@@ -240,6 +249,8 @@ GET_HASH_FIELD,
 
 SET_HASH_FIELD,
 
-GET_MULTIPLE_FIELDS
+GET_MULTIPLE_FIELDS,
+
+SET_MULTIPLE_FIELDS
 
 };

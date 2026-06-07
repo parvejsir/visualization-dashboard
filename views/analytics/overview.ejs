@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Overview Call Analysis</title>
+  <link rel="stylesheet" href="/public/styles.css"/>
+</head>
+<body>
+<div class="an-page">
+  <div class="an-topbar">
+    <a href="/" class="an-back">&larr; Dashboard Home</a>
+    <h1 class="an-title">Overview Call Analysis</h1>
+    <span class="an-subtitle">19 KPIs across all call sources</span>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="card an-filters" id="filterBar">
+    <div class="an-filter-row">
+      <div class="an-filter-group">
+        <label class="an-label">From (ET)</label>
+        <input type="datetime-local" id="fromInput" class="an-input" step="60"/>
+      </div>
+      <div class="an-filter-group">
+        <label class="an-label">To (ET)</label>
+        <input type="datetime-local" id="toInput" class="an-input" step="60"/>
+      </div>
+      <div class="an-filter-group an-filter-actions">
+        <button id="applyBtn" class="btn">Apply</button>
+        <button id="resetBtn" class="btn btn-secondary">Reset</button>
+      </div>
+    </div>
+    <div class="an-status-row">
+      <span id="statusMsg" class="an-status"></span>
+    </div>
+  </div>
+
+  <!-- 19 KPI cards — start as skeletons, filled after API response -->
+  <div class="kpi-grid" id="kpiGrid">
+    <div class="kpi-card kpi-skeleton" data-kpi="totalAIDialed">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Total AI Dialed</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="goTo382">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Go To 382Com</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="complete382">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Complete By 382Com</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="goToTBI">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Go To TBI</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="completeTBI">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Complete By TBI</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="asr382">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">ASR 382 (%)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="acd382">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">ACD 382 (sec)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="asrTBI">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">ASR TBI (%)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="acdTBI">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">ACD TBI (sec)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="cost382">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">382 Cost ($)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="costTBI">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">TBI Cost ($)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="leadsCost">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Leads Cost ($)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="retellCost">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Retell Cost ($)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton kpi-card--highlight" data-kpi="totalCost">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Total Cost ($)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="humanAnswerPct">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Human Answer (%)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="transferCount">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Transfer Count</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="paidCount">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Paid Count</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="costPerTransfer">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Cost / Transfer ($)</span>
+    </div>
+    <div class="kpi-card kpi-skeleton" data-kpi="costPerPaid">
+      <div class="kpi-card__sk is-loading"></div>
+      <span class="kpi-card__lbl">Cost / Paid ($)</span>
+    </div>
+  </div>
+
+  <!-- Chart detail panel — shown when user clicks a KPI card -->
+  <div class="chart-panel hidden" id="chartPanel">
+    <div class="chart-panel__header">
+      <span id="chartPanelTitle" class="chart-panel__title"></span>
+      <button id="chartCloseBtn" class="chart-panel__close">&times;</button>
+    </div>
+    <canvas id="detailChart" height="260"></canvas>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<script src="/public/analytics/store.js"></script>
+<script src="/public/analytics/overview.js"></script>
+</body>
+</html>

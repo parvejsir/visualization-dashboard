@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Server Wise Analysis</title>
+  <link rel="stylesheet" href="/public/styles.css"/>
+</head>
+<body>
+<div class="an-page">
+  <div class="an-topbar">
+    <a href="/" class="an-back">&larr; Dashboard Home</a>
+    <h1 class="an-title">Server Wise Analysis</h1>
+    <span class="an-subtitle">Per-IP breakdown across 382 and TBI infrastructure</span>
+  </div>
+
+  <div class="card an-filters" id="filterBar">
+    <div class="an-filter-row">
+      <div class="an-filter-group">
+        <label class="an-label">From (ET)</label>
+        <input type="datetime-local" id="fromInput" class="an-input" step="60"/>
+      </div>
+      <div class="an-filter-group">
+        <label class="an-label">To (ET)</label>
+        <input type="datetime-local" id="toInput" class="an-input" step="60"/>
+      </div>
+      <div class="an-filter-group an-filter-actions">
+        <button id="applyBtn" class="btn">Apply</button>
+        <button id="resetBtn" class="btn btn-secondary">Reset</button>
+      </div>
+    </div>
+    <span id="statusMsg" class="an-status"></span>
+  </div>
+
+  <!-- Summary KPIs -->
+  <div class="kpi-grid kpi-grid--small" id="summaryGrid" style="display:none">
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="sumServers">—</span>
+      <span class="kpi-card__lbl">Unique Servers</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="sumTotalCalls">—</span>
+      <span class="kpi-card__lbl">Total Calls</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="sumTotalCost">—</span>
+      <span class="kpi-card__lbl">Total Cost ($)</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="sumAvgAsr">—</span>
+      <span class="kpi-card__lbl">Avg ASR (%)</span>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="card an-chart-card" id="chartCard" style="display:none">
+    <div class="an-chart-title">Calls by Server (Top 20)</div>
+    <canvas id="serverChart" height="260"></canvas>
+  </div>
+
+  <!-- Server table -->
+  <div class="card" id="tableCard" style="display:none">
+    <div class="an-table-title">Server Detail</div>
+    <div class="an-table-wrap">
+      <table class="an-table" id="serverTable">
+        <thead>
+          <tr>
+            <th>Server IP</th>
+            <th>Total Calls</th>
+            <th>Completed</th>
+            <th>ASR %</th>
+            <th>ACD (sec)</th>
+            <th>Total Cost ($)</th>
+          </tr>
+        </thead>
+        <tbody id="serverTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="an-empty hidden" id="emptyMsg">No data for selected range.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<script src="/public/analytics/store.js"></script>
+<script src="/public/analytics/server-page.js"></script>
+</body>
+</html>

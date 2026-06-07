@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Hourly Business Analysis</title>
+  <link rel="stylesheet" href="/public/styles.css"/>
+</head>
+<body>
+<div class="an-page">
+  <div class="an-topbar">
+    <a href="/" class="an-back">&larr; Dashboard Home</a>
+    <h1 class="an-title">Hourly Business Analysis</h1>
+    <span class="an-subtitle">Call volume and cost broken down by hour of day</span>
+  </div>
+
+  <div class="card an-filters" id="filterBar">
+    <div class="an-filter-row">
+      <div class="an-filter-group">
+        <label class="an-label">From (ET)</label>
+        <input type="datetime-local" id="fromInput" class="an-input" step="60"/>
+      </div>
+      <div class="an-filter-group">
+        <label class="an-label">To (ET)</label>
+        <input type="datetime-local" id="toInput" class="an-input" step="60"/>
+      </div>
+      <div class="an-filter-group an-filter-actions">
+        <button id="applyBtn" class="btn">Apply</button>
+        <button id="resetBtn" class="btn btn-secondary">Reset</button>
+      </div>
+    </div>
+    <span id="statusMsg" class="an-status"></span>
+  </div>
+
+  <!-- Summary peak indicators -->
+  <div class="kpi-grid kpi-grid--small" id="summaryGrid" style="display:none">
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="peakHour">—</span>
+      <span class="kpi-card__lbl">Peak Hour</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="peakCalls">—</span>
+      <span class="kpi-card__lbl">Peak Hour Calls</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="totalCallsAll">—</span>
+      <span class="kpi-card__lbl">Total Calls (All Hours)</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-card__val" id="totalCostAll">—</span>
+      <span class="kpi-card__lbl">Total Cost ($)</span>
+    </div>
+  </div>
+
+  <!-- Stacked bar chart — calls by hour, segmented by source -->
+  <div class="card an-chart-card" id="chartCard" style="display:none">
+    <div class="an-chart-title">Call Volume by Hour (All Sources)</div>
+    <canvas id="hourlyChart" height="280"></canvas>
+  </div>
+
+  <!-- Cost heatmap / bar -->
+  <div class="card an-chart-card" id="costChartCard" style="display:none">
+    <div class="an-chart-title">Cost by Hour</div>
+    <canvas id="costChart" height="200"></canvas>
+  </div>
+
+  <!-- Hourly heatmap table -->
+  <div class="card" id="tableCard" style="display:none">
+    <div class="an-table-title">Hourly Detail</div>
+    <div class="an-table-wrap">
+      <table class="an-table" id="hourlyTable">
+        <thead>
+          <tr>
+            <th>Hour (ET)</th>
+            <th>AI Calls</th>
+            <th>382 Calls</th>
+            <th>TBI Calls</th>
+            <th>Total Calls</th>
+            <th>Total Cost ($)</th>
+          </tr>
+        </thead>
+        <tbody id="hourlyTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="an-empty hidden" id="emptyMsg">No data for selected range.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<script src="/public/analytics/store.js"></script>
+<script src="/public/analytics/hourly-page.js"></script>
+</body>
+</html>

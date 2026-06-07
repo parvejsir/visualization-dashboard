@@ -2,27 +2,28 @@
 const express = require("express");
 const path = require("path");
 const dotenv = require("dotenv");
-const { MongoClient } = require("mongodb");
 const { stringify } = require("csv-stringify");
 const {
 
-CONNECT_REDIS,
+  CONNECT_REDIS,
 
-GET_CACHE,
+  GET_CACHE,
 
-SET_CACHE,
+  SET_CACHE,
 
-GET_TTL,
+  GET_TTL,
 
-GET_HASH_FIELD,
+  GET_HASH_FIELD,
 
-SET_HASH_FIELD,
+  SET_HASH_FIELD,
 
-GET_MULTIPLE_FIELDS
+  GET_MULTIPLE_FIELDS
 
-}=require(
-"./services/redisService"
+} = require(
+  "./services/redisService"
 );
+const { getDb, closeDb } = require("./services/db");
+const { viewRouter: analyticsViewRouter, apiRouter: analyticsApiRouter } = require("./analytics/router");
 
 dotenv.config();
 
@@ -46,22 +47,7 @@ const DB_NAME = process.env.DB_NAME;
 if (!MONGO_URI) throw new Error("Missing MONGO_URI in .env");
 if (!DB_NAME) throw new Error("Missing DB_NAME in .env");
 
-// ---- Mongo client (single shared connection) ----
-let client;
-let db;
-
-async function getDb() {
-  if (db) return db;
-  client = new MongoClient(MONGO_URI, {
-    maxPoolSize: 20,
-    // Increase server selection timeout so slow / distant clusters don't immediately fail
-    serverSelectionTimeoutMS: 10000000
-  });
-  await client.connect();
-  db = client.db(DB_NAME);
-  console.log("✅ Connected to MongoDB");
-  return db;
-}
+// MongoDB connection is managed in services/db.js (getDb singleton imported above)
 
 // ---- Helpers: parsing query params safely ----
 function toArray(val) {
@@ -626,77 +612,77 @@ TIME CHUNK HELPERS
 
 function GET_HOUR_BUCKETS(
 
-FROM,
+  FROM,
 
-TO
+  TO
 
-){
+) {
 
-const BUCKETS=[];
+  const BUCKETS = [];
 
-const CURRENT=
-new Date(
-FROM
-);
+  const CURRENT =
+    new Date(
+      FROM
+    );
 
-CURRENT.setMinutes(
-0
-);
+  CURRENT.setMinutes(
+    0
+  );
 
-CURRENT.setSeconds(
-0
-);
+  CURRENT.setSeconds(
+    0
+  );
 
-CURRENT.setMilliseconds(
-0
-);
+  CURRENT.setMilliseconds(
+    0
+  );
 
-const END=
-new Date(
-TO
-);
+  const END =
+    new Date(
+      TO
+    );
 
-END.setMinutes(
-0
-);
+  END.setMinutes(
+    0
+  );
 
-END.setSeconds(
-0
-);
+  END.setSeconds(
+    0
+  );
 
-END.setMilliseconds(
-0
-);
+  END.setMilliseconds(
+    0
+  );
 
-while(
-CURRENT<=END
-){
+  while (
+    CURRENT <= END
+  ) {
 
-BUCKETS.push(
+    BUCKETS.push(
 
-new Date(
-CURRENT
-)
+      new Date(
+        CURRENT
+      )
 
-);
+    );
 
-CURRENT.setTime(
+    CURRENT.setTime(
 
-CURRENT.getTime()
+      CURRENT.getTime()
 
-+
+      +
 
-60*
+      60 *
 
-60*
+      60 *
 
-1000
+      1000
 
-);
+    );
 
-}
+  }
 
-return BUCKETS;
+  return BUCKETS;
 
 }
 
@@ -711,56 +697,56 @@ field:
 
 function BUILD_CHUNK_KEY(
 
-DATE
+  DATE
 
-){
+) {
 
-const Y=
+  const Y =
 
-DATE.getUTCFullYear();
+    DATE.getUTCFullYear();
 
-const M=
+  const M =
 
-String(
-DATE.getUTCMonth()+1
-).padStart(
-2,
-"0"
-);
+    String(
+      DATE.getUTCMonth() + 1
+    ).padStart(
+      2,
+      "0"
+    );
 
-const D=
+  const D =
 
-String(
-DATE.getUTCDate()
-).padStart(
-2,
-"0"
-);
+    String(
+      DATE.getUTCDate()
+    ).padStart(
+      2,
+      "0"
+    );
 
-return `calls:${Y}-${M}-${D}`;
+  return `calls:${Y}-${M}-${D}`;
 
 }
 
 function BUILD_FIELD_NAME(
 
-DATE,
+  DATE,
 
-DIRECTION
+  DIRECTION
 
-){
+) {
 
-const HOUR=
+  const HOUR =
 
-String(
+    String(
 
-DATE.getUTCHours()
+      DATE.getUTCHours()
 
-).padStart(
-2,
-"0"
-);
+    ).padStart(
+      2,
+      "0"
+    );
 
-return `${HOUR}_${DIRECTION}`;
+  return `${HOUR}_${DIRECTION}`;
 
 }
 
@@ -770,123 +756,128 @@ filter minute ranges
 
 function FILTER_BY_RANGE(
 
-ROWS,
+  ROWS,
 
-FROM,
+  FROM,
 
-TO
+  TO
 
-){
+) {
 
-const FROM_MS=
+  const FROM_MS =
 
-new Date(
-FROM
-).getTime();
+    new Date(
+      FROM
+    ).getTime();
 
-const TO_MS=
+  const TO_MS =
 
-new Date(
-TO
-).getTime();
+    new Date(
+      TO
+    ).getTime();
 
-return ROWS.filter(
-row=>{
+  return ROWS.filter(
+    row => {
 
-const T=
+      const T =
 
-Number(
-row.call_start_time
-);
+        Number(
+          row.call_start_time
+        );
 
-return(
+      return (
 
-T>=FROM_MS &&
+        T >= FROM_MS &&
 
-T<=TO_MS
+        T <= TO_MS
 
-);
+      );
 
-}
-);
-
-}
-
-async function LOAD_CHUNKS_FROM_REDIS(BUCKETS,DIRECTION){
-
-const CHUNKS=[];
-
-for(const BUCKET of BUCKETS){
-
-const KEY=
-BUILD_CHUNK_KEY(
-BUCKET
-);
-
-const FIELD=
-BUILD_FIELD_NAME(
-BUCKET,
-DIRECTION
-);
-
-const DATA=
-await GET_HASH_FIELD(
-KEY,
-FIELD
-);
-
-CHUNKS.push({
-
-key:KEY,
-
-field:FIELD,
-
-data:DATA
-
-});
+    }
+  );
 
 }
 
-return CHUNKS;
+async function LOAD_CHUNKS_FROM_REDIS(BUCKETS, DIRECTION) {
+
+  const CHUNKS = [];
+
+  for (const BUCKET of BUCKETS) {
+
+    const KEY =
+      BUILD_CHUNK_KEY(
+        BUCKET
+      );
+
+    const FIELD =
+      BUILD_FIELD_NAME(
+        BUCKET,
+        DIRECTION
+      );
+
+    const DATA =
+      await GET_HASH_FIELD(
+        KEY,
+        FIELD
+      );
+
+    CHUNKS.push({
+
+      key: KEY,
+
+      field: FIELD,
+
+      data: DATA
+
+    });
+
+  }
+
+  return CHUNKS;
 
 }
 
-function MERGE_CHUNKS(CHUNKS){
+function MERGE_CHUNKS(CHUNKS) {
 
-const MERGED=[];
+  const MERGED = [];
 
-for(const CHUNK of CHUNKS){
+  for (const CHUNK of CHUNKS) {
 
-if(
-CHUNK &&
-CHUNK.data &&
-Array.isArray(
-CHUNK.data
-)
-){
+    if (
+      CHUNK &&
+      CHUNK.data &&
+      Array.isArray(
+        CHUNK.data
+      )
+    ) {
 
-MERGED.push(
-...CHUNK.data
-);
+      MERGED.push(
+        ...CHUNK.data
+      );
 
-}
+    }
 
-}
+  }
 
-return MERGED;
-
-}
-
-function FIND_MISSING_CHUNKS(CHUNKS){
-
-return CHUNKS.filter(
-x=>!x.data
-);
+  return MERGED;
 
 }
 
-// ---- Views ----
-app.get("/", (req, res) => {
+function FIND_MISSING_CHUNKS(CHUNKS) {
+
+  return CHUNKS.filter(
+    x => !x.data
+  );
+
+}
+
+// ---- Analytics pages (new) ----
+app.get("/", (req, res) => res.render("landing"));
+app.use("/analytics", analyticsViewRouter);
+app.use("/api/analytics", analyticsApiRouter);
+
+// ---- Legacy dashboard (moved from /) ----
+app.get("/dashboard", (req, res) => {
   res.render("dashboard");
 });
 
@@ -938,77 +929,77 @@ app.get("/api/meta", async (req, res) => {
 });
 
 // ---- Main data endpoint (pagination) ----
-app.get("/api/transcriptions", async (req,res)=>{
+app.get("/api/transcriptions", async (req, res) => {
 
-try{
+  try {
 
-const started=
-Date.now();
+    const started =
+      Date.now();
 
-const DIRECTION=
-getCallDirectionMode(
-req.query
-);
+    const DIRECTION =
+      getCallDirectionMode(
+        req.query
+      );
 
-const PAGE=
-Math.max(
-parseInt(
-req.query.page||"1",
-10
-),
-1
-);
+    const PAGE =
+      Math.max(
+        parseInt(
+          req.query.page || "1",
+          10
+        ),
+        1
+      );
 
-const PAGE_SIZE=
-Math.min(
-Math.max(
-parseInt(
-req.query.pageSize||"200",
-10
-),
-1
-),
-1000
-);
+    const PAGE_SIZE =
+      Math.min(
+        Math.max(
+          parseInt(
+            req.query.pageSize || "200",
+            10
+          ),
+          1
+        ),
+        1000
+      );
 
-const REDIS_STARTED=
-Date.now();
+    const REDIS_STARTED =
+      Date.now();
 
-const BUCKETS=
+    const BUCKETS =
 
-GET_HOUR_BUCKETS(
+      GET_HOUR_BUCKETS(
 
-req.query.from,
+        req.query.from,
 
-req.query.to
+        req.query.to
 
-);
+      );
 
-const REDIS_CHUNKS=
+    const REDIS_CHUNKS =
 
-await LOAD_CHUNKS_FROM_REDIS(
+      await LOAD_CHUNKS_FROM_REDIS(
 
-BUCKETS,
+        BUCKETS,
 
-DIRECTION
+        DIRECTION
 
-);
+      );
 
-const REDIS_LOOKUP_TIME=
+    const REDIS_LOOKUP_TIME =
 
-Date.now()
--
-REDIS_STARTED;
+      Date.now()
+      -
+      REDIS_STARTED;
 
-const MISSING_CHUNKS=
+    const MISSING_CHUNKS =
 
-FIND_MISSING_CHUNKS(
-REDIS_CHUNKS
-);
+      FIND_MISSING_CHUNKS(
+        REDIS_CHUNKS
+      );
 
-console.log(
+    console.log(
 
-`[CHUNKS]
+      `[CHUNKS]
 
 Total:
 
@@ -1022,135 +1013,135 @@ Redis Lookup:
 
 ${REDIS_LOOKUP_TIME} ms`
 
-);
+    );
 
-const db=
-await getDb();
+    const db =
+      await getDb();
 
-const col=
-db.collection(
-"transcriptions"
-);
+    const col =
+      db.collection(
+        "transcriptions"
+      );
 
-/*
-FETCH ONLY MISSING CHUNKS
-*/
+    /*
+    FETCH ONLY MISSING CHUNKS
+    */
 
-for(const CHUNK of MISSING_CHUNKS){
+    for (const CHUNK of MISSING_CHUNKS) {
 
-const HOUR_DATE=
+      const HOUR_DATE =
 
-new Date(
+        new Date(
 
-CHUNK.field
-?BUCKETS[
-MISSING_CHUNKS.indexOf(
-CHUNK
-)
-]
-:null
+          CHUNK.field
+            ? BUCKETS[
+            MISSING_CHUNKS.indexOf(
+              CHUNK
+            )
+            ]
+            : null
 
-);
+        );
 
-const HOUR_START=
+      const HOUR_START =
 
-new Date(
-HOUR_DATE
-);
+        new Date(
+          HOUR_DATE
+        );
 
-const HOUR_END=
+      const HOUR_END =
 
-new Date(
-HOUR_DATE
-);
+        new Date(
+          HOUR_DATE
+        );
 
-HOUR_END.setHours(
-HOUR_END.getHours()+1
-);
+      HOUR_END.setHours(
+        HOUR_END.getHours() + 1
+      );
 
-const TEMP_QUERY={
+      const TEMP_QUERY = {
 
-...req.query,
+        ...req.query,
 
-from:
-HOUR_START.toISOString(),
+        from:
+          HOUR_START.toISOString(),
 
-to:
-HOUR_END.toISOString()
+        to:
+          HOUR_END.toISOString()
 
-};
+      };
 
-const {
+      const {
 
-match,
+        match,
 
-directionMode
+        directionMode
 
-}=
-buildMatchFromFilters(
-TEMP_QUERY
-);
+      } =
+        buildMatchFromFilters(
+          TEMP_QUERY
+        );
 
-const BASE=
+      const BASE =
 
-buildBasePipeline(
+        buildBasePipeline(
 
-match,
+          match,
 
-directionMode
+          directionMode
 
-);
+        );
 
-const PIPELINE=[
+      const PIPELINE = [
 
-...BASE,
+        ...BASE,
 
-{
+        {
 
-$sort:{
+          $sort: {
 
-call_start_time:-1
+            call_start_time: -1
 
-}
+          }
 
-}
+        }
 
-];
+      ];
 
-const AGG=
+      const AGG =
 
-await col.aggregate(
+        await col.aggregate(
 
-PIPELINE,
+          PIPELINE,
 
-{
+          {
 
-allowDiskUse:true
+            allowDiskUse: true
 
-}
+          }
 
-).toArray();
+        ).toArray();
 
-await SET_HASH_FIELD(
+      await SET_HASH_FIELD(
 
-CHUNK.key,
+        CHUNK.key,
 
-CHUNK.field,
+        CHUNK.field,
 
-AGG,
+        AGG,
 
-Number(
-process.env.REDIS_TTL
-)
+        Number(
+          process.env.REDIS_TTL
+        )
 
-);
+      );
 
-CHUNK.data=
-AGG;
+      CHUNK.data =
+        AGG;
 
-console.log(
+      console.log(
 
-`[CACHE SAVE]
+        `[CACHE SAVE]
 
 ${CHUNK.key}
 
@@ -1160,55 +1151,55 @@ rows:
 
 ${AGG.length}`
 
-);
+      );
 
-}
+    }
 
-const MERGED=
+    const MERGED =
 
-MERGE_CHUNKS(
-REDIS_CHUNKS
-);
+      MERGE_CHUNKS(
+        REDIS_CHUNKS
+      );
 
-const FILTERED=
+    const FILTERED =
 
-FILTER_BY_RANGE(
+      FILTER_BY_RANGE(
 
-MERGED,
+        MERGED,
 
-req.query.from,
+        req.query.from,
 
-req.query.to
+        req.query.to
 
-);
+      );
 
 
 
-const START=
-(PAGE-1)
-*
-PAGE_SIZE;
+    const START =
+      (PAGE - 1)
+      *
+      PAGE_SIZE;
 
-const END=
-START+
-PAGE_SIZE;
+    const END =
+      START +
+      PAGE_SIZE;
 
-const PAGINATED=
+    const PAGINATED =
 
-FILTERED.slice(
-START,
-END
-);
+      FILTERED.slice(
+        START,
+        END
+      );
 
-const DURATION=
+    const DURATION =
 
-Date.now()
--
-started;
+      Date.now()
+      -
+      started;
 
-console.log(
+    console.log(
 
-`[RESULT]
+      `[RESULT]
 
 rows:
 
@@ -1218,64 +1209,64 @@ time:
 
 ${DURATION} ms`
 
-);
+    );
 
-return res.json({
+    return res.json({
 
-page:
-PAGE,
+      page:
+        PAGE,
 
-pageSize:
-PAGE_SIZE,
+      pageSize:
+        PAGE_SIZE,
 
-total:
-FILTERED.length,
+      total:
+        FILTERED.length,
 
-totalPages:
+      totalPages:
 
-Math.ceil(
+        Math.ceil(
 
-FILTERED.length/
+          FILTERED.length /
 
-PAGE_SIZE
+          PAGE_SIZE
 
-),
+        ),
 
-data:
-PAGINATED,
+      data:
+        PAGINATED,
 
 
 
-cache_status:
+      cache_status:
 
-MISSING_CHUNKS.length
-?
+        MISSING_CHUNKS.length
+          ?
 
-"MISS"
+          "MISS"
 
-:
+          :
 
-"HIT"
+          "HIT"
 
-});
+    });
 
-}
+  }
 
-catch(e){
+  catch (e) {
 
-console.error(
-e
-);
+    console.error(
+      e
+    );
 
-res.status(500).json({
+    res.status(500).json({
 
-error:
+      error:
 
-"Query failed"
+        "Query failed"
 
-});
+    });
 
-}
+  }
 
 });
 
@@ -1383,7 +1374,7 @@ app.listen(PORT, () => {
 // Graceful shutdown
 process.on("SIGINT", async () => {
   try {
-    if (client) await client.close();
+    await closeDb();
   } finally {
     process.exit(0);
   }
