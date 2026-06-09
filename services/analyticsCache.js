@@ -16,10 +16,12 @@ function buildCacheKey(page, params) {
 }
 
 function getTtl(params) {
-  if (!params.to) return TTL_TODAY_SECONDS;
-  const to = new Date(params.to);
+  // Support both UTC ISO string (params.to) and ET date string (params.toDate)
+  const toStr = params.to || (params.toDate ? `${params.toDate}T23:59:59Z` : null);
+  if (!toStr) return TTL_TODAY_SECONDS;
+  const to = new Date(toStr);
+  if (Number.isNaN(to.getTime())) return TTL_TODAY_SECONDS;
   const nowUtc = new Date();
-  // if the "to" date is today or in the future, use short TTL
   return to.toDateString() === nowUtc.toDateString() || to > nowUtc
     ? TTL_TODAY_SECONDS
     : TTL_HISTORY_SECONDS;

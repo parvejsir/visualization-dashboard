@@ -5,60 +5,144 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Server Wise Analysis</title>
   <link rel="stylesheet" href="/public/styles.css"/>
+  <style>
+    .srv-filter-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: flex-end;
+    }
+    .srv-filter-pair {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .srv-filter-pair label { font-size: 11px; font-weight: 600; color: #9bb6ff; letter-spacing: .04em; }
+    .srv-filter-pair-inner { display: flex; gap: 6px; }
+    .srv-filter-actions { display: flex; gap: 8px; align-self: flex-end; }
+
+    /* Multi-select */
+    select.an-input[multiple] {
+      min-width: 180px;
+      padding: 4px 8px;
+      height: auto;
+    }
+    select.an-input[multiple] option { padding: 4px 6px; }
+    select.an-input { min-width: 140px; }
+
+    /* Progress bar (same as ai-summary) */
+    .srv-progress {
+      height: 3px; background: #1a2035; border-radius: 3px;
+      overflow: hidden; margin: 8px 0 0; display: none;
+    }
+    .srv-progress.is-active { display: block; }
+    .srv-progress__fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 50%, #3b82f6 100%);
+      background-size: 200% 100%; border-radius: 3px;
+      animation: srv-slide 1.4s linear infinite; width: 40%; position: relative; left: -40%;
+    }
+    .srv-progress.is-done .srv-progress__fill {
+      animation: none; left: 0; width: 100%; background: #22c55e; transition: all .25s ease;
+    }
+    @keyframes srv-slide { 0% { left: -40%; } 100% { left: 100%; } }
+
+    .srv-hint { font-size: 11px; color: #475569; margin-top: 4px; }
+  </style>
 </head>
 <body>
 <div class="an-page">
   <div class="an-topbar">
     <a href="/" class="an-back">&larr; Dashboard Home</a>
     <h1 class="an-title">Server Wise Analysis</h1>
-    <span class="an-subtitle">Per-IP breakdown across 382 and TBI infrastructure</span>
+    <span class="an-subtitle">Vicidialer dials · Retell calls · Transfers — per server IP</span>
   </div>
 
-  <div class="card an-filters" id="filterBar">
-    <div class="an-filter-row">
-      <div class="an-filter-group">
-        <label class="an-label">From (ET)</label>
-        <input type="datetime-local" id="fromInput" class="an-input" step="60"/>
+  <!-- ── Filter bar ─────────────────────────────────────────────────────── -->
+  <div class="card an-filters">
+    <div class="srv-filter-grid">
+
+      <!-- From -->
+      <div class="srv-filter-pair">
+        <label>From (ET)</label>
+        <div class="srv-filter-pair-inner">
+          <input type="date" id="fromDateInput" class="an-input"/>
+          <input type="time" id="fromTimeInput" class="an-input" value="09:00" step="300"/>
+        </div>
       </div>
-      <div class="an-filter-group">
-        <label class="an-label">To (ET)</label>
-        <input type="datetime-local" id="toInput" class="an-input" step="60"/>
+
+      <!-- To -->
+      <div class="srv-filter-pair">
+        <label>To (ET)</label>
+        <div class="srv-filter-pair-inner">
+          <input type="date" id="toDateInput" class="an-input"/>
+          <input type="time" id="toTimeInput" class="an-input" value="22:00" step="300"/>
+        </div>
       </div>
-      <div class="an-filter-group an-filter-actions">
+
+      <!-- Server IPs -->
+      <div class="srv-filter-pair">
+        <label>Server IPs</label>
+        <select id="serverSelect" class="an-input" multiple size="7">
+          <option value="" selected>— All Servers —</option>
+          <option value="15.204.108.111">15.204.108.111</option>
+          <option value="15.204.110.171">15.204.110.171</option>
+          <option value="15.204.107.116">15.204.107.116</option>
+          <option value="15.204.107.118">15.204.107.118</option>
+          <option value="15.204.105.49">15.204.105.49</option>
+          <option value="15.204.105.37">15.204.105.37</option>
+        </select>
+        <span class="srv-hint">Ctrl/Cmd+click for multi-select</span>
+      </div>
+
+      <!-- Agent Mode -->
+      <div class="srv-filter-pair">
+        <label>Agent</label>
+        <select id="agentSelect" class="an-input">
+          <option value="all">All Agents</option>
+          <option value="retell">Retell only</option>
+        </select>
+      </div>
+
+      <div class="srv-filter-actions">
         <button id="applyBtn" class="btn">Apply</button>
         <button id="resetBtn" class="btn btn-secondary">Reset</button>
       </div>
     </div>
-    <span id="statusMsg" class="an-status"></span>
+
+    <div class="srv-progress" id="progressBar"><div class="srv-progress__fill"></div></div>
+    <div class="an-status-row">
+      <span id="statusMsg" class="an-status"></span>
+    </div>
   </div>
 
-  <!-- Summary KPIs -->
+  <!-- ── Summary KPIs ────────────────────────────────────────────────────── -->
   <div class="kpi-grid kpi-grid--small" id="summaryGrid" style="display:none">
     <div class="kpi-card">
       <span class="kpi-card__val" id="sumServers">—</span>
-      <span class="kpi-card__lbl">Unique Servers</span>
+      <span class="kpi-card__lbl">Active Servers</span>
     </div>
     <div class="kpi-card">
-      <span class="kpi-card__val" id="sumTotalCalls">—</span>
-      <span class="kpi-card__lbl">Total Calls</span>
+      <span class="kpi-card__val" id="sumRetellCalls">—</span>
+      <span class="kpi-card__lbl">Retell Calls</span>
     </div>
     <div class="kpi-card">
-      <span class="kpi-card__val" id="sumTotalCost">—</span>
-      <span class="kpi-card__lbl">Total Cost ($)</span>
+      <span class="kpi-card__val" id="sumTransfers">—</span>
+      <span class="kpi-card__lbl">Transfers</span>
     </div>
     <div class="kpi-card">
-      <span class="kpi-card__val" id="sumAvgAsr">—</span>
-      <span class="kpi-card__lbl">Avg ASR (%)</span>
+      <span class="kpi-card__val" id="sumTransferRate">—</span>
+      <span class="kpi-card__lbl">Transfer Rate %</span>
     </div>
   </div>
 
-  <!-- Chart -->
+  <!-- ── Chart ──────────────────────────────────────────────────────────── -->
   <div class="card an-chart-card" id="chartCard" style="display:none">
-    <div class="an-chart-title">Calls by Server (Top 20)</div>
+    <div class="an-chart-title">Calls by Server</div>
     <canvas id="serverChart" height="260"></canvas>
   </div>
 
-  <!-- Server table -->
+  <!-- ── Table ──────────────────────────────────────────────────────────── -->
   <div class="card" id="tableCard" style="display:none">
     <div class="an-table-title">Server Detail</div>
     <div class="an-table-wrap">
@@ -66,11 +150,9 @@
         <thead>
           <tr>
             <th>Server IP</th>
-            <th>Total Calls</th>
-            <th>Completed</th>
-            <th>ASR %</th>
-            <th>ACD (sec)</th>
-            <th>Total Cost ($)</th>
+            <th>Retell Calls</th>
+            <th>Transfers</th>
+            <th>Transfer Rate %</th>
           </tr>
         </thead>
         <tbody id="serverTableBody"></tbody>
@@ -82,7 +164,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
-<script src="/public/analytics/store.js"></script>
 <script src="/public/analytics/server-page.js"></script>
 </body>
 </html>

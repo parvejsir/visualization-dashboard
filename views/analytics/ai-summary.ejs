@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>AI Summary Dashboard</title>
+  <link rel="stylesheet" href="/public/styles.css"/>
+  <style>
+    /* ── Progress bar ──────────────────────────────────────────────────────── */
+    .ais-progress {
+      height: 3px;
+      background: #1a2035;
+      border-radius: 3px;
+      overflow: hidden;
+      margin: 0.6rem 0 0.3rem;
+      display: none;
+    }
+    .ais-progress.is-active { display: block; }
+    .ais-progress__fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 50%, #3b82f6 100%);
+      background-size: 200% 100%;
+      border-radius: 3px;
+      animation: ais-slide 1.4s linear infinite;
+      width: 40%;
+      position: relative;
+      left: -40%;
+    }
+    .ais-progress.is-done .ais-progress__fill {
+      animation: none;
+      left: 0;
+      width: 100%;
+      background: #22c55e;
+      transition: all 0.25s ease;
+    }
+    @keyframes ais-slide {
+      0%   { left: -40%; }
+      100% { left: 100%; }
+    }
+
+    /* ── Section headers ───────────────────────────────────────────────────── */
+    .ais-section-hdr {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin: 1.75rem 0 0.85rem;
+    }
+    .ais-section-hdr__badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      color: #fff;
+    }
+    .badge--blue   { background: #2563eb; }
+    .badge--green  { background: #16a34a; }
+    .badge--amber  { background: #d97706; }
+    .badge--rose   { background: #e11d48; }
+    .badge--purple { background: #7c3aed; }
+    .badge--teal   { background: #0e7490; }
+    .ais-section-hdr__title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #cbd5e1;
+    }
+    .ais-section-hdr__sub {
+      font-size: 0.72rem;
+      color: #475569;
+      margin-left: auto;
+    }
+
+    /* ── KPI grid / card ───────────────────────────────────────────────────── */
+    .ais-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+    .ais-kpi {
+      background: #141926;
+      border: 1px solid #242c42;
+      border-radius: 12px;
+      padding: 1.25rem 1.1rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .ais-kpi--blue   { border-color: #2563eb; }
+    .ais-kpi--green  { border-color: #16a34a; }
+    .ais-kpi--amber  { border-color: #d97706; }
+    .ais-kpi--rose   { border-color: #e11d48; }
+    .ais-kpi--purple { border-color: #7c3aed; }
+    .ais-kpi--teal   { border-color: #0891b2; }
+    .ais-kpi--gray   { border-color: #334155; }
+    .ais-kpi__lbl {
+      font-size: 0.72rem;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 600;
+    }
+    .ais-kpi__val {
+      font-size: 2.1rem;
+      font-weight: 700;
+      line-height: 1;
+      color: #e2e8f0;
+    }
+    .ais-kpi__val--blue   { color: #60a5fa; }
+    .ais-kpi__val--green  { color: #4ade80; }
+    .ais-kpi__val--amber  { color: #fbbf24; }
+    .ais-kpi__val--rose   { color: #fb7185; }
+    .ais-kpi__val--purple { color: #a78bfa; }
+    .ais-kpi__val--teal   { color: #22d3ee; }
+    .ais-kpi__val--gray   { color: #94a3b8; }
+    .ais-kpi__sub {
+      font-size: 0.68rem;
+      color: #475569;
+      line-height: 1.4;
+    }
+    .ais-kpi__sk {
+      height: 2rem;
+      width: 65%;
+      border-radius: 6px;
+      background: #1e2640;
+    }
+    .ais-kpi__sk.is-loading {
+      animation: ais-skeleton 1.4s ease-in-out infinite;
+    }
+    @keyframes ais-skeleton {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .35; }
+    }
+
+    /* ── Breakdown table ───────────────────────────────────────────────────── */
+    .ais-table-wrap {
+      background: #141926;
+      border: 1px solid #242c42;
+      border-radius: 12px;
+      overflow: auto;
+      margin-bottom: 1rem;
+    }
+    .ais-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      min-width: 540px;
+    }
+    .ais-table th {
+      text-align: left;
+      color: #475569;
+      font-weight: 600;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid #1e2640;
+      white-space: nowrap;
+    }
+    .ais-table th.right, .ais-table td.right { text-align: right; }
+    .ais-table td {
+      padding: 0.6rem 1rem;
+      color: #94a3b8;
+      border-bottom: 1px solid #1a2035;
+    }
+    .ais-table tr:last-child td { border-bottom: none; }
+    .ais-table .num { font-variant-numeric: tabular-nums; font-weight: 600; color: #cbd5e1; }
+    .ais-table .cost-num { font-variant-numeric: tabular-nums; font-weight: 500; color: #94a3b8; }
+    .ais-table .total-row td {
+      color: #e2e8f0;
+      font-weight: 700;
+      border-top: 1px solid #2a3349;
+      background: #181e30;
+    }
+    .ais-table .total-row .num { color: #f1f5f9; }
+    .carrier-badge {
+      display: inline-block;
+      font-size: 0.6rem;
+      font-weight: 700;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-right: 0.3rem;
+      vertical-align: middle;
+    }
+    .cb--382 { background: #1d4ed8; color: #bfdbfe; }
+    .cb--tbi { background: #065f46; color: #a7f3d0; }
+
+    .ais-window-note {
+      font-size: 0.7rem;
+      color: #334155;
+      margin-top: 0.25rem;
+    }
+
+    .ais-filter-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto auto;
+      gap: 0.75rem;
+      align-items: end;
+    }
+    .ais-filter-pair {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .ais-filter-pair label {
+      font-size: 0.7rem;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-weight: 600;
+    }
+    .ais-filter-pair-inner {
+      display: flex;
+      gap: 0.4rem;
+    }
+    .ais-filter-pair-inner .an-input { flex: 1; min-width: 0; }
+    .ais-sep {
+      color: #475569;
+      font-size: 1.2rem;
+      align-self: flex-end;
+      padding-bottom: 0.4rem;
+    }
+    .ais-actions { display: flex; gap: 0.5rem; align-self: flex-end; }
+    @media (max-width: 700px) {
+      .ais-filter-grid { grid-template-columns: 1fr; }
+      .ais-sep { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="an-page">
+  <div class="an-topbar">
+    <a href="/" class="an-back">&larr; Dashboard Home</a>
+    <h1 class="an-title">AI Summary</h1>
+    <span class="an-subtitle">Dialed · Transfer · Attempts · Paid — across Retell + 382com + TBI</span>
+  </div>
+
+  <!-- ── Filter bar ───────────────────────────────────────────────────────── -->
+  <div class="card an-filters">
+    <div class="ais-filter-grid">
+      <div class="ais-filter-pair">
+        <label>From (ET)</label>
+        <div class="ais-filter-pair-inner">
+          <input type="date" id="fromDateInput" class="an-input"/>
+          <input type="time" id="fromTimeInput" class="an-input" value="09:00" step="300"/>
+        </div>
+      </div>
+      <span class="ais-sep">&rarr;</span>
+      <div class="ais-filter-pair">
+        <label>To (ET)</label>
+        <div class="ais-filter-pair-inner">
+          <input type="date" id="toDateInput" class="an-input"/>
+          <input type="time" id="toTimeInput" class="an-input" value="22:00" step="300"/>
+        </div>
+      </div>
+      <div class="ais-actions">
+        <button id="applyBtn" class="btn">Apply</button>
+        <button id="resetBtn" class="btn btn-secondary">Reset</button>
+      </div>
+    </div>
+    <!-- Progress bar -->
+    <div class="ais-progress" id="progressBar"><div class="ais-progress__fill"></div></div>
+    <div class="an-status-row">
+      <span id="statusMsg" class="an-status"></span>
+    </div>
+    <div class="ais-window-note" id="windowNote"></div>
+  </div>
+
+  <!-- ── AI Dialing (Retell / Transcriptions) ────────────────────────────── -->
+  <div class="ais-section-hdr">
+    <span class="ais-section-hdr__badge badge--blue">AI Dialing</span>
+    <span class="ais-section-hdr__title">Retell / Transcriptions</span>
+    <span class="ais-section-hdr__sub">transcriptions collection · UTC-stored · converted from ET</span>
+  </div>
+  <div class="ais-kpi-grid">
+    <div class="ais-kpi ais-kpi--blue" data-kpi="totalDialed">
+      <span class="ais-kpi__lbl">Total Dialed</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">All call_analyzed events in window</span>
+    </div>
+    <div class="ais-kpi ais-kpi--green" data-kpi="totalTransfer">
+      <span class="ais-kpi__lbl">Total Transfer</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">disconnection_reason = call_transfer</span>
+    </div>
+    <div class="ais-kpi ais-kpi--purple" data-kpi="retellCost">
+      <span class="ais-kpi__lbl">Retell Cost</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Sum of combined_cost ÷ 100 (excl. vicidial)</span>
+    </div>
+    <div class="ais-kpi ais-kpi--teal" data-kpi="humanAnswerCount">
+      <span class="ais-kpi__lbl">Human Answer</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">HU / NI / NHO / LB / WN / CALLBK / XFER / DNC</span>
+    </div>
+    <div class="ais-kpi ais-kpi--green" data-kpi="humanAnswerPct">
+      <span class="ais-kpi__lbl">HA%</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Human Answer ÷ Total Dialed × 100</span>
+    </div>
+  </div>
+
+  <!-- ── Carrier: 382com ─────────────────────────────────────────────────── -->
+  <div class="ais-section-hdr">
+    <span class="ais-section-hdr__badge badge--amber">382com</span>
+    <span class="ais-section-hdr__title">Carrier — cdrsuretouchleads + cdrsuretouchsharks</span>
+    <span class="ais-section-hdr__sub">Already in ET · Duration threshold ≥ 100 s for paid</span>
+  </div>
+  <div class="ais-kpi-grid">
+    <div class="ais-kpi ais-kpi--gray" data-kpi="c382-dialed">
+      <span class="ais-kpi__lbl">Total Dialed</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">All CDR records in window (leads + sharks)</span>
+    </div>
+    <div class="ais-kpi ais-kpi--amber" data-kpi="c382-attempts">
+      <span class="ais-kpi__lbl">Attempts to Client</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Terminating Number = 8482371501</span>
+    </div>
+    <div class="ais-kpi ais-kpi--rose" data-kpi="c382-paid">
+      <span class="ais-kpi__lbl">Paid Transfers</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Client # + Duration ≥ 100 s</span>
+    </div>
+    <div class="ais-kpi ais-kpi--gray" data-kpi="c382-cost">
+      <span class="ais-kpi__lbl">Total Cost</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Sum of Charge field</span>
+    </div>
+    <div class="ais-kpi ais-kpi--blue" data-kpi="c382-acd">
+      <span class="ais-kpi__lbl">ACD</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Avg call duration — leads + sharks</span>
+    </div>
+  </div>
+
+  <!-- ── Carrier: TBI ────────────────────────────────────────────────────── -->
+  <div class="ais-section-hdr">
+    <span class="ais-section-hdr__badge badge--green">TBI</span>
+    <span class="ais-section-hdr__title">Carrier — cdrtbirecords</span>
+    <span class="ais-section-hdr__sub">Already in ET · Duration threshold ≥ 100 s for paid</span>
+  </div>
+  <div class="ais-kpi-grid">
+    <div class="ais-kpi ais-kpi--gray" data-kpi="ctbi-dialed">
+      <span class="ais-kpi__lbl">Total Dialed</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">All TBI CDR records in window</span>
+    </div>
+    <div class="ais-kpi ais-kpi--teal" data-kpi="ctbi-attempts">
+      <span class="ais-kpi__lbl">Attempts to Client</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">dst_number = 8482371501</span>
+    </div>
+    <div class="ais-kpi ais-kpi--rose" data-kpi="ctbi-paid">
+      <span class="ais-kpi__lbl">Paid Transfers</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Client # + duration ≥ 100 s</span>
+    </div>
+    <div class="ais-kpi ais-kpi--gray" data-kpi="ctbi-cost">
+      <span class="ais-kpi__lbl">Total Cost</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Sum of account_cost field</span>
+    </div>
+    <div class="ais-kpi ais-kpi--blue" data-kpi="ctbi-acd">
+      <span class="ais-kpi__lbl">ACD</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Avg call duration — TBI</span>
+    </div>
+  </div>
+
+  <!-- ── Overall CDR Totals ──────────────────────────────────────────────── -->
+  <div class="ais-section-hdr">
+    <span class="ais-section-hdr__badge badge--purple">Overall</span>
+    <span class="ais-section-hdr__title">CDR Totals — 382com + TBI combined</span>
+  </div>
+  <div class="ais-kpi-grid">
+    <div class="ais-kpi ais-kpi--amber" data-kpi="totalAttempts">
+      <span class="ais-kpi__lbl">Total Attempts</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">382com + TBI combined</span>
+    </div>
+    <div class="ais-kpi ais-kpi--rose" data-kpi="totalPaid">
+      <span class="ais-kpi__lbl">Total Paid Transfer</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">382com + TBI combined</span>
+    </div>
+    <div class="ais-kpi ais-kpi--gray" data-kpi="totalCdrCost">
+      <span class="ais-kpi__lbl">Total CDR Cost</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">382com + TBI combined</span>
+    </div>
+  </div>
+
+  <!-- ── Leads Cost ─────────────────────────────────────────────────────── -->
+  <div class="ais-section-hdr">
+    <span class="ais-section-hdr__badge badge--teal">Leads</span>
+    <span class="ais-section-hdr__title">Leads Cost — realtimeleads collection</span>
+    <span class="ais-section-hdr__sub">status = Queued · env = production · fromDate full calendar day (ET)</span>
+  </div>
+  <div class="ais-kpi-grid">
+    <div class="ais-kpi ais-kpi--teal" data-kpi="leadsCount">
+      <span class="ais-kpi__lbl">Lead Count</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Queued + production leads in date window</span>
+    </div>
+    <div class="ais-kpi ais-kpi--green" data-kpi="leadsCost">
+      <span class="ais-kpi__lbl">Leads Cost</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Lead Count × $0.05</span>
+    </div>
+  </div>
+
+  <!-- ── Grand Total Cost ──────────────────────────────────────────────── -->
+  <div class="ais-section-hdr">
+    <span class="ais-section-hdr__badge badge--rose">Grand Total</span>
+    <span class="ais-section-hdr__title">Total Cost — 382com + TBI + Retell + Leads</span>
+    <span class="ais-section-hdr__sub">Cost per Transfer · Cost per Paid Transfer</span>
+  </div>
+  <div class="ais-kpi-grid">
+    <div class="ais-kpi ais-kpi--rose" data-kpi="grandTotalCost">
+      <span class="ais-kpi__lbl">Grand Total Cost</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">CDR (382com + TBI) + Retell + Leads</span>
+    </div>
+    <div class="ais-kpi ais-kpi--amber" data-kpi="costPerTransfer">
+      <span class="ais-kpi__lbl">Cost / Transfer</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Grand Total ÷ Total Transfer</span>
+    </div>
+    <div class="ais-kpi ais-kpi--green" data-kpi="costPerPaidTransfer">
+      <span class="ais-kpi__lbl">Cost / Paid Transfer</span>
+      <div class="ais-kpi__sk is-loading"></div>
+      <span class="ais-kpi__sub">Grand Total ÷ Total Paid Transfer</span>
+    </div>
+  </div>
+
+  <!-- ── Sub-collection breakdown table ─────────────────────────────────── -->
+  <div class="ais-section-hdr">
+    <span class="ais-section-hdr__badge badge--rose">Breakdown</span>
+    <span class="ais-section-hdr__title">Per-collection Detail</span>
+  </div>
+  <div class="ais-table-wrap" id="breakdownSection" style="display:none">
+    <table class="ais-table">
+      <thead>
+        <tr>
+          <th>Collection</th>
+          <th class="right">Total Dialed</th>
+          <th class="right">Attempts</th>
+          <th class="right">Paid Transfers</th>
+          <th class="right">Cost ($)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="carrier-badge cb--382">382</span>cdrsuretouchleads</td>
+          <td class="right num" id="br-leads-dialed">—</td>
+          <td class="right num" id="br-leads-att">—</td>
+          <td class="right num" id="br-leads-paid">—</td>
+          <td class="right cost-num" id="br-leads-cost">—</td>
+        </tr>
+        <tr>
+          <td><span class="carrier-badge cb--382">382</span>cdrsuretouchsharks</td>
+          <td class="right num" id="br-sharks-dialed">—</td>
+          <td class="right num" id="br-sharks-att">—</td>
+          <td class="right num" id="br-sharks-paid">—</td>
+          <td class="right cost-num" id="br-sharks-cost">—</td>
+        </tr>
+        <tr>
+          <td><span class="carrier-badge cb--tbi">TBI</span>cdrtbirecords</td>
+          <td class="right num" id="br-tbi-dialed">—</td>
+          <td class="right num" id="br-tbi-att">—</td>
+          <td class="right num" id="br-tbi-paid">—</td>
+          <td class="right cost-num" id="br-tbi-cost">—</td>
+        </tr>
+        <tr class="total-row">
+          <td>Total</td>
+          <td class="right num" id="br-total-dialed">—</td>
+          <td class="right num" id="br-total-att">—</td>
+          <td class="right num" id="br-total-paid">—</td>
+          <td class="right cost-num" id="br-total-cost">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script src="/public/analytics/store.js"></script>
+<script src="/public/analytics/ai-summary.js"></script>
+</body>
+</html>

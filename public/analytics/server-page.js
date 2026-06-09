@@ -2,12 +2,31 @@
 (function () {
   "use strict";
 
-  const store = window.AnalyticsStore;
   let serverChart = null;
+  let lastParamsKey = null;
 
+  // ── DOM refs ────────────────────────────────────────────────────────────
+  const fromDateInput = document.getElementById("fromDateInput");
+  const fromTimeInput = document.getElementById("fromTimeInput");
+  const toDateInput   = document.getElementById("toDateInput");
+  const toTimeInput   = document.getElementById("toTimeInput");
+  const serverSelect  = document.getElementById("serverSelect");
+  const agentSelect   = document.getElementById("agentSelect");
+  const progressBar   = document.getElementById("progressBar");
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
   function setStatus(msg, color) {
     const el = document.getElementById("statusMsg");
     if (el) { el.textContent = msg; el.style.color = color || "#9bb6ff"; }
+  }
+
+  function progressStart() {
+    progressBar.classList.remove("is-done");
+    progressBar.classList.add("is-active");
+  }
+  function progressDone() {
+    progressBar.classList.add("is-done");
+    setTimeout(() => progressBar.classList.remove("is-active", "is-done"), 600);
   }
 
   function esc(v) {
@@ -18,43 +37,96 @@
   function show(id) { const el = document.getElementById(id); if (el) el.style.display = ""; }
   function hide(id) { const el = document.getElementById(id); if (el) el.style.display = "none"; }
 
-  function renderSummary(rows) {
-    const totalCalls = rows.reduce((s, r) => s + r.totalCalls, 0);
-    const totalCost  = rows.reduce((s, r) => s + r.totalCost, 0);
-    const avgAsr     = rows.length > 0
-      ? (rows.reduce((s, r) => s + r.asr, 0) / rows.length).toFixed(2)
-      : 0;
+  function getTodayEt() {
+    const dtf = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric", month: "2-digit", day: "2-digit"
+    });
+    const parts = dtf.formatToParts(new Date());
+    const map = {};
+    for (const p of parts) if (p.type !== "literal") map[p.type] = p.value;
+    return `${map.year}-${map.month}-${map.day}`;
+  }
 
-    document.getElementById("sumServers").textContent    = rows.length.toLocaleString();
-    document.getElementById("sumTotalCalls").textContent = totalCalls.toLocaleString();
-    document.getElementById("sumTotalCost").textContent  = "$" + totalCost.toFixed(2);
-    document.getElementById("sumAvgAsr").textContent     = avgAsr + "%";
+  function setDefaults() {
+    const today = getTodayEt();
+    fromDateInput.value = today;
+    fromTimeInput.value = "09:00";
+    toDateInput.value   = today;
+    toTimeInput.value   = "22:00";
+  }
+  setDefaults();
+
+  // ── Read selected server IPs ─────────────────────────────────────────────
+  // Returns array of selected IPs, or null (= all) if "All Servers" or nothing selected
+  function getSelectedServers() {
+    const opts = Array.from(serverSelect.selectedOptions).map(o => o.value);
+    // If empty string (All Servers) is selected or nothing is selected → all
+    if (opts.length === 0 || opts.includes("")) return null;
+    return opts.filter(Boolean);
+  }
+
+  // ── Build query params ───────────────────────────────────────────────────
+  // Sends ET date/time strings directly (no UTC conversion) because the
+  // server converts them for each collection as needed.
+  function buildParams() {
+    const p = {
+      fromDate:  fromDateInput.value || getTodayEt(),
+      fromTime:  fromTimeInput.value || "09:00",
+      toDate:    toDateInput.value   || fromDateInput.value || getTodayEt(),
+      toTime:    toTimeInput.value   || "22:00",
+      agentMode: agentSelect.value   || "all"
+    };
+    const servers = getSelectedServers();
+    if (servers) p.servers = servers.join(",");
+    return p;
+  }
+
+  function buildQS(p) {
+    const qs = new URLSearchParams();
+    Object.entries(p).forEach(([k, v]) => { if (v) qs.set(k, v); });
+    return qs.toString();
+  }
+
+  function paramsKey(p) { return JSON.stringify(p); }
+
+  // ── Render ───────────────────────────────────────────────────────────────
+  function renderSummary(rows) {
+    const active      = rows.filter(r => r.retellCalls > 0).length;
+    const totalRetell = rows.reduce((s, r) => s + r.retellCalls, 0);
+    const totalXfer   = rows.reduce((s, r) => s + r.transfers,   0);
+    const xferRate    = totalRetell > 0
+      ? ((totalXfer / totalRetell) * 100).toFixed(2) : "0.00";
+
+    document.getElementById("sumServers").textContent      = active.toLocaleString();
+    document.getElementById("sumRetellCalls").textContent  = totalRetell.toLocaleString();
+    document.getElementById("sumTransfers").textContent    = totalXfer.toLocaleString();
+    document.getElementById("sumTransferRate").textContent = xferRate + "%";
     show("summaryGrid");
   }
 
   function renderChart(rows) {
-    const top20 = rows.slice(0, 20);
     const canvas = document.getElementById("serverChart");
     if (serverChart) { serverChart.destroy(); serverChart = null; }
 
     serverChart = new Chart(canvas, {
       type: "bar",
       data: {
-        labels: top20.map(r => r.server),
+        labels: rows.map(r => r.server),
         datasets: [
           {
-            label: "Total Calls",
-            data: top20.map(r => r.totalCalls),
+            label:           "Retell Calls",
+            data:            rows.map(r => r.retellCalls),
             backgroundColor: "#4d6eff",
-            borderRadius: 4,
-            borderWidth: 0
+            borderRadius:    4,
+            borderWidth:     0
           },
           {
-            label: "Completed",
-            data: top20.map(r => r.completedCalls),
-            backgroundColor: "#00c2cb",
-            borderRadius: 4,
-            borderWidth: 0
+            label:           "Transfers",
+            data:            rows.map(r => r.transfers),
+            backgroundColor: "#22c55e",
+            borderRadius:    4,
+            borderWidth:     0
           }
         ]
       },
@@ -77,11 +149,9 @@
     tbody.innerHTML = rows.map(r => `
       <tr>
         <td>${esc(r.server)}</td>
-        <td>${r.totalCalls.toLocaleString()}</td>
-        <td>${r.completedCalls.toLocaleString()}</td>
-        <td>${r.asr}%</td>
-        <td>${r.acd}</td>
-        <td>$${r.totalCost}</td>
+        <td>${r.retellCalls.toLocaleString()}</td>
+        <td>${r.transfers.toLocaleString()}</td>
+        <td>${r.transferRate}%</td>
       </tr>
     `).join("");
     show("tableCard");
@@ -99,19 +169,20 @@
     renderTable(rows);
   }
 
+  // ── Fetch ────────────────────────────────────────────────────────────────
   async function applyFilters() {
-    const params = window.StoreUtils.getFilterParams();
+    const params = buildParams();
+    const key    = paramsKey(params);
 
-    if (!store.isStale(params)) {
-      const data = store.getState().data;
-      if (data) { render(data); return; }
-    }
+    // Avoid re-fetching same params
+    if (key === lastParamsKey) return;
 
-    store.setState({ status: "loading" });
+    progressStart();
     setStatus("Fetching server data...", "#9bb6ff");
+    hide("summaryGrid"); hide("chartCard"); hide("tableCard"); hide("emptyMsg");
 
     try {
-      const qs  = window.StoreUtils.buildQS(params);
+      const qs  = buildQS(params);
       const t0  = Date.now();
       const res = await fetch(`/api/analytics/server${qs ? "?" + qs : ""}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -119,21 +190,25 @@
       const rows = resp.data || [];
       const ms   = Date.now() - t0;
 
-      store.setState({ status: "loaded", data: rows });
-      store.markFresh(params);
-
+      lastParamsKey = key;
+      progressDone();
       render(rows);
-      setStatus(`Loaded in ${(ms / 1000).toFixed(1)}s  |  cache: ${resp.cache || "MISS"}`, "#10b981");
+      setStatus(
+        `Loaded in ${(ms / 1000).toFixed(1)}s  |  ${rows.length} server(s)  |  cache: ${resp.cache || "MISS"}`,
+        "#10b981"
+      );
     } catch (e) {
-      store.setState({ status: "error", error: e.message });
+      progressDone();
       setStatus("Error: " + e.message, "#f43f5e");
     }
   }
 
   function reset() {
-    document.getElementById("fromInput").value = "";
-    document.getElementById("toInput").value   = "";
-    store.setState({ status: "idle", data: null, lastParamsHash: null });
+    setDefaults();
+    // Reset server select to "All Servers"
+    Array.from(serverSelect.options).forEach(o => { o.selected = o.value === ""; });
+    agentSelect.value = "all";
+    lastParamsKey = null;
     hide("summaryGrid"); hide("chartCard"); hide("tableCard"); hide("emptyMsg");
     setStatus("", "");
     if (serverChart) { serverChart.destroy(); serverChart = null; }

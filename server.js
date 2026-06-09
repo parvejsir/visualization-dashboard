@@ -40,7 +40,7 @@ const publicDir = path.join(__dirname, "public");
 console.log("Serving static from:", publicDir);
 app.use("/public", express.static(publicDir));
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const MONGO_URI = process.env.MONGO_URI;
 const DB_NAME = process.env.DB_NAME;
 

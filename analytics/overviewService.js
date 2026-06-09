@@ -43,12 +43,25 @@ function buildCdrSureMatch(fromDay, toDay) {
   return m;
 }
 
+// Return the next calendar day as "YYYY-MM-DD" — used for TBI's $lt upper bound
+function nextDay(dateStr) {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// TBI date field is "YYYY-MM-DD HH:MM:SS" string (ET).
+// Rule: same-day → $gte fromDate, $lt nextDay(fromDate) (includes full day)
+//       multi-day → $gte fromDate, $lt toDate           (toDate is exclusive)
+// fromStr / toStr may carry a time suffix — strip to date-only before comparing.
 function buildCdrTbiMatch(fromStr, toStr) {
   const m = {};
-  if (fromStr || toStr) {
+  const fromDate = fromStr ? fromStr.substring(0, 10) : null;
+  const toDate   = toStr   ? toStr.substring(0, 10)   : null;
+  if (fromDate || toDate) {
     m.date = {};
-    if (fromStr) m.date.$gte = fromStr;
-    if (toStr)   m.date.$lte = toStr;
+    if (fromDate) m.date.$gte = fromDate;
+    if (toDate)   m.date.$lt  = fromDate === toDate ? nextDay(fromDate) : toDate;
   }
   return m;
 }
@@ -92,7 +105,8 @@ function computeKpis(transcFacet, sureFacet, sharkFacet, tbiFacet, leadsCount) {
   const goToTBI     = tb.totalCount?.[0]?.n         ?? 0;
   const completeTBI = tb.completedCount?.[0]?.n     ?? 0;
   const costTBI     = tb.totalCost?.[0]?.total      ?? 0;
-  const acdTBIRaw   = tb.avgDuration?.[0]?.avg      ?? 0;
+  const tbiTotalDur = tb.totalDuration?.[0]?.total  ?? 0;
+  const acdTBIRaw   = goToTBI > 0 ? tbiTotalDur / goToTBI : 0;
 
   const leadsTotal  = leadsCount?.n ?? 0;
   const leadsCost   = leadsTotal * 0.05;
@@ -212,7 +226,7 @@ async function compute(params) {
           totalCount:     [{ $count: "n" }],
           completedCount: [{ $match: { duration: { $gt: 0 } } }, { $count: "n" }],
           totalCost:      [{ $group: { _id: null, total: { $sum: "$account_cost" } } }],
-          avgDuration:    [{ $match: { duration: { $gt: 0 } } }, { $group: { _id: null, avg: { $avg: "$duration" } } }],
+          totalDuration:  [{ $group: { _id: null, total: { $sum: "$duration" } } }],
           paidCount:      [{ $match: { dst_number: CLIENT_PHONE, duration: { $gt: 100 } } }, { $count: "n" }]
       }}
     ], { allowDiskUse: true }).toArray(),
